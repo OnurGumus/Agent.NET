@@ -87,10 +87,16 @@ module Tool =
             else None
         with _ -> None
 
+    /// Gets the Invoke method with the most parameters (handles curried functions)
+    let private getInvokeMethod (fnType: Type) =
+        fnType.GetMethods()
+        |> Array.filter (fun m -> m.Name = "Invoke")
+        |> Array.maxBy (fun m -> m.GetParameters().Length)
+
     /// Creates a tool from a single-parameter function
     let fromFn (fn: 'a -> 'b) : Tool =
         let fnType = fn.GetType()
-        let invokeMethod = fnType.GetMethod("Invoke")
+        let invokeMethod = getInvokeMethod fnType
         let parameters =
             invokeMethod.GetParameters()
             |> Array.map (fun p -> {
@@ -110,7 +116,7 @@ module Tool =
     /// Creates a tool from an anonymous function with an explicit name
     let fromFnNamed (name: string) (description: string) (fn: 'a -> 'b) : Tool =
         let fnType = fn.GetType()
-        let invokeMethod = fnType.GetMethod("Invoke")
+        let invokeMethod = getInvokeMethod fnType
         let parameters =
             invokeMethod.GetParameters()
             |> Array.map (fun p -> {
