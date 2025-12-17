@@ -74,6 +74,7 @@ module Executor =
 type WorkflowStep =
     | Step of name: string * execute: (obj -> WorkflowContext -> Async<obj>)
     | Route of router: (obj -> WorkflowContext -> Async<obj>)
+    | Parallel of executors: (obj -> WorkflowContext -> Async<obj>) list
 
 
 /// A workflow definition that can be executed
@@ -104,6 +105,28 @@ module internal WorkflowInternal =
             return result :> obj
         })
 
+    /// Wraps a list of typed executors as untyped parallel functions
+    let wrapParallel<'i, 'o> (executors: Executor<'i, 'o> list) : WorkflowStep =
+        let wrappedFns =
+            executors
+            |> List.map (fun exec ->
+                fun (input: obj) (ctx: WorkflowContext) -> async {
+                    let typedInput = input :?> 'i
+                    let! result = exec.Execute typedInput ctx
+                    return result :> obj
+                })
+        Parallel wrappedFns
+
+    /// Wraps an aggregator executor, handling the obj list → typed list conversion
+    let wrapGather<'elem, 'o> (exec: Executor<'elem list, 'o>) : WorkflowStep =
+        Step (exec.Name, fun input ctx -> async {
+            // Input is obj list from parallel, convert each element to the expected type
+            let objList = input :?> obj list
+            let typedList = objList |> List.map (fun o -> o :?> 'elem)
+            let! result = exec.Execute typedList ctx
+            return result :> obj
+        })
+
 
 /// Builder for the workflow computation expression
 type WorkflowBuilder() =
@@ -125,6 +148,18 @@ type WorkflowBuilder() =
     [<CustomOperation("route")>]
     member _.Route<'a, 'b>(steps: WorkflowStep list, router: 'a -> Executor<'a, 'b>) : WorkflowStep list =
         steps @ [WorkflowInternal.wrapRouter router]
+
+    /// Runs multiple executors in parallel on the same input (fan-out)
+    /// Output becomes a list of all results
+    [<CustomOperation("scatter")>]
+    member _.Scatter<'i, 'o>(steps: WorkflowStep list, executors: Executor<'i, 'o> list) : WorkflowStep list =
+        steps @ [WorkflowInternal.wrapParallel executors]
+
+    /// Aggregates parallel results into a single output (fan-in)
+    /// Converts the obj list from scatter into a typed list for the executor
+    [<CustomOperation("gather")>]
+    member _.Gather<'elem, 'o>(steps: WorkflowStep list, executor: Executor<'elem list, 'o>) : WorkflowStep list =
+        steps @ [WorkflowInternal.wrapGather executor]
 
     /// Builds the final workflow definition
     member _.Run(steps: WorkflowStep list) : WorkflowDef<'input, 'output> =
@@ -155,6 +190,14 @@ module Workflow =
                 | Route router ->
                     let! result = router current ctx
                     current <- result
+                | Parallel executors ->
+                    // Run all executors concurrently with the same input
+                    let! results =
+                        executors
+                        |> List.map (fun exec -> exec current ctx)
+                        |> Async.Parallel
+                    // Output is a list of all results
+                    current <- (results |> Array.toList) :> obj
 
             return current :?> 'output
         }

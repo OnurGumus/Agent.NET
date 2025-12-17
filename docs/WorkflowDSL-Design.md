@@ -56,15 +56,17 @@ let emailWorkflow = workflow {
 let analysisWorkflow = workflow {
     start dataLoader
 
-    parallel [
+    scatter [
         technicalAnalyst
         fundamentalAnalyst
         sentimentAnalyst
     ]
 
-    aggregate summaryWriter
+    gather summaryWriter
 }
 ```
+
+> **Note:** We use `scatter`/`gather` instead of `parallel`/`aggregate` because `parallel` is reserved in F#.
 
 ### Error Handling & Resilience
 
@@ -358,7 +360,7 @@ let emailWorkflow = workflow {
 
 1. [x] Prototype the `workflow` CE with basic `start` and `next`
 2. [x] Add `route` with pattern matching support
-3. [ ] Implement `parallel` / `aggregate` for fan-out/fan-in
+3. [x] Implement `scatter` / `gather` for fan-out/fan-in
 4. [ ] Add resilience (`retry`, `timeout`, `fallback`)
 5. [ ] Build compilation layer to MAF's `WorkflowBuilder`
 6. [ ] Test with real multi-agent scenarios
