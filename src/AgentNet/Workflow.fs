@@ -73,6 +73,7 @@ module Executor =
 /// A step in a workflow pipeline
 type WorkflowStep =
     | Step of name: string * execute: (obj -> WorkflowContext -> Async<obj>)
+    | Route of router: (obj -> WorkflowContext -> Async<obj>)
 
 
 /// A workflow definition that can be executed
@@ -93,6 +94,16 @@ module internal WorkflowInternal =
             return result :> obj
         })
 
+    /// Wraps a typed router function as an untyped route step
+    /// The router takes input and returns an executor to run on that same input
+    let wrapRouter<'a, 'b> (router: 'a -> Executor<'a, 'b>) : WorkflowStep =
+        Route (fun input ctx -> async {
+            let typedInput = input :?> 'a
+            let selectedExecutor = router typedInput
+            let! result = selectedExecutor.Execute typedInput ctx
+            return result :> obj
+        })
+
 
 /// Builder for the workflow computation expression
 type WorkflowBuilder() =
@@ -108,6 +119,12 @@ type WorkflowBuilder() =
     [<CustomOperation("next")>]
     member _.Next<'i, 'o>(steps: WorkflowStep list, executor: Executor<'i, 'o>) : WorkflowStep list =
         steps @ [WorkflowInternal.wrapExecutor executor]
+
+    /// Routes to different executors based on the previous step's output
+    /// Use with pattern matching: route (function | CaseA -> exec1 | CaseB -> exec2)
+    [<CustomOperation("route")>]
+    member _.Route<'a, 'b>(steps: WorkflowStep list, router: 'a -> Executor<'a, 'b>) : WorkflowStep list =
+        steps @ [WorkflowInternal.wrapRouter router]
 
     /// Builds the final workflow definition
     member _.Run(steps: WorkflowStep list) : WorkflowDef<'input, 'output> =
@@ -132,8 +149,11 @@ module Workflow =
 
             for step in workflow.Steps do
                 match step with
-                | Step (name, execute) ->
+                | Step (_, execute) ->
                     let! result = execute current ctx
+                    current <- result
+                | Route router ->
+                    let! result = router current ctx
                     current <- result
 
             return current :?> 'output

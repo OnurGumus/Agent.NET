@@ -357,7 +357,7 @@ let emailWorkflow = workflow {
 ## Next Steps
 
 1. [x] Prototype the `workflow` CE with basic `start` and `next`
-2. [ ] Add `route` with pattern matching support
+2. [x] Add `route` with pattern matching support
 3. [ ] Implement `parallel` / `aggregate` for fan-out/fan-in
 4. [ ] Add resilience (`retry`, `timeout`, `fallback`)
 5. [ ] Build compilation layer to MAF's `WorkflowBuilder`
