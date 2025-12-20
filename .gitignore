@@ -55,3 +55,9 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Serena MCP
+.serena/
+
+# Claude Code
+.claude/
