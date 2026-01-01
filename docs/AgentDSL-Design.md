@@ -1,7 +1,7 @@
 # AgentNet F# Computation Expression Library Spec
 
 ## Overview
-An F# computation expression library wrapping Microsoft.SemanticKernel to provide a clean, idiomatic way to create AI agents. The goal is to create a "killer app" for F# that even C# developers will want to use.
+An F# computation expression library (originally wrapping Microsoft.SemanticKernel, but now pivoted to Microsoft Agent Framework) to provide a clean, idiomatic way to create AI agents. The goal is to create a "killer app" for F# that even C# developers will want to use.
 
 ## Design Philosophy
 Inspired by [FSharp.SystemCommandLine](https://github.com/JordanMarr/FSharp.SystemCommandLine):
