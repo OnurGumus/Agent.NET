@@ -47,18 +47,18 @@ type SequentialWorkflowTests() =
         stubClient.SetResponse("RESEARCH_RESULT:", "ANALYSIS_RESULT: Data is significant.")
         stubClient.SetResponse("ANALYSIS_RESULT:", "FINAL_REPORT: Conclusion reached.")
 
-        // Create agents using the stub client
-        let researcherAgent =
-            agent { instructions "You are a researcher. Research the given topic." }
-            |> fun cfg -> cfg.Build(stubClient)
+        // Create agents using the stub client with new syntax
+        let researcherAgent = agent stubClient {
+            instructions "You are a researcher. Research the given topic."
+        }
 
-        let analyzerAgent =
-            agent { instructions "You are an analyzer. Analyze the given research." }
-            |> fun cfg -> cfg.Build(stubClient)
+        let analyzerAgent = agent stubClient {
+            instructions "You are an analyzer. Analyze the given research."
+        }
 
-        let writerAgent =
-            agent { instructions "You are a writer. Write a report from the analysis." }
-            |> fun cfg -> cfg.Build(stubClient)
+        let writerAgent = agent stubClient {
+            instructions "You are a writer. Write a report from the analysis."
+        }
 
         // Create executors from agents
         let researcher = Executor.fromAgent "Researcher" researcherAgent

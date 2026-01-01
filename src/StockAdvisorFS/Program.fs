@@ -13,34 +13,31 @@ let deploymentName = tryGetEnv "AZURE_OPENAI_DEPLOYMENT" |> Option.defaultValue 
 
 let client = AzureOpenAIClient(Uri(endpoint), DefaultAzureCredential())
 let chatClient = client.GetChatClient(deploymentName).AsIChatClient()
-let stockAdvisorAgent = 
-    agent {
-        name "StockAdvisor"
-        instructions """
-            You are a helpful stock analysis assistant. You help users analyze stocks,
-            compare investments, and understand market metrics.
+let stockAdvisor = agent chatClient {
+    name "StockAdvisor"
+    instructions """
+        You are a helpful stock analysis assistant. You help users analyze stocks,
+        compare investments, and understand market metrics.
 
-            When a user asks about stocks:
-            1. Use the available tools to gather relevant data
-            2. Analyze the information
-            3. Provide clear, actionable insights
+        When a user asks about stocks:
+        1. Use the available tools to gather relevant data
+        2. Analyze the information
+        3. Provide clear, actionable insights
 
-            After providing your analysis, also consider broader market context:
-            - Market sector trends
-            - Economic factors that might affect the stock
-            - Risk considerations based on current market conditions
-            - A final investment recommendation summary
+        After providing your analysis, also consider broader market context:
+        - Market sector trends
+        - Economic factors that might affect the stock
+        - Risk considerations based on current market conditions
+        - A final investment recommendation summary
 
-            Be concise but thorough in your analysis.
-            """
+        Be concise but thorough in your analysis.
+        """
 
-        add stockInfoTool
-        add historicalTool
-        add volatilityTool
-        add compareTool
-    }
-
-let agent = stockAdvisorAgent.Build(chatClient)
+    add stockInfoTool
+    add historicalTool
+    add volatilityTool
+    add compareTool
+}
 
 printfn "Stock Advisor Agent (F# Edition)"
 printfn "================================="
@@ -56,7 +53,7 @@ let rec loop () = async {
         return ()
     else
         printf "\nStockAdvisor: "
-        let! response = agent.Chat input
+        let! response = stockAdvisor.Chat input
         printfn "%s\n" response
         return! loop ()
 }

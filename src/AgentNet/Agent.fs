@@ -15,8 +15,10 @@ type Agent = {
     Chat: string -> Async<string>
 }
 
-/// Builder for the agent computation expression
-type AgentBuilder() =
+/// Base builder for the agent computation expression.
+/// Provides all custom operations but no Run method.
+/// Inherit from this and add Run to create a concrete builder.
+type AgentBuilderBase() =
 
     member _.Yield(_) : AgentConfig =
         {
@@ -44,8 +46,3 @@ type AgentBuilder() =
     [<CustomOperation("tools")>]
     member _.AddTools(config: AgentConfig, tools: Tool list) =
         { config with Tools = config.Tools @ tools }
-
-/// The agent computation expression builder instance
-[<AutoOpen>]
-module AgentCE =
-    let agent = AgentBuilder()
