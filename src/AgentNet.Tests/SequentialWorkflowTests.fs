@@ -37,10 +37,9 @@ type SequentialWorkflowTests() =
         // Assert: Verify the output shows correct sequencing
         result |> should equal "Report: Analysis: Research on F# agents"
 
-    /// Test B: Agent-based test using IChatClient stub
-    /// This validates the full integration path with Executor.fromAgent.
+    /// Integration test: validates agent CE -> Build -> Executor.fromAgent -> workflow path
     [<Test>]
-    member _.``Sequential workflow with agent executors``() =
+    member _.``Agent executors integrate with workflow DSL``() =
         // Arrange: Create a stub chat client with distinct, non-overlapping patterns
         let stubClient = new StubChatClient()
         // Each response contains a unique marker that won't match other patterns
