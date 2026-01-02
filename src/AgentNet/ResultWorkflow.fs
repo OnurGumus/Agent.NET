@@ -82,8 +82,8 @@ module ResultExecutor =
             Execute = fn
         }
 
-    /// Creates a result executor from an AgentNet Agent (map semantics - agents don't return Result)
-    let fromAgent (name: string) (agent: Agent) : ResultExecutor<string, string, 'error> =
+    /// Creates a result executor from an AgentNet ChatAgent (map semantics - agents don't return Result)
+    let fromAgent (name: string) (agent: ChatAgent) : ResultExecutor<string, string, 'error> =
         {
             Name = name
             Execute = fun input _ -> async {

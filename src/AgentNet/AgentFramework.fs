@@ -37,8 +37,8 @@ module MAF =
             instructions = config.Instructions,
             tools = tools) :> AIAgent
 
-    /// Builds a fully functional AgentNet.Agent from config and chat client
-    let build (chatClient: IChatClient) (config: AgentConfig) : AgentNet.Agent =
+    /// Builds a fully functional ChatAgent from config and chat client
+    let build (chatClient: IChatClient) (config: AgentConfig) : ChatAgent =
         let mafAgent = createAgent chatClient config
         let thread = mafAgent.GetNewThread()
 
@@ -50,13 +50,22 @@ module MAF =
             }
         }
 
+/// Extends Agent type with the build function (requires MAF)
+[<AutoOpen>]
+module AgentExtensions =
+
+    type Agent with
+        /// Builds an agent from config using the specified chat client
+        static member build (chatClient: IChatClient) (config: AgentConfig) : ChatAgent =
+            MAF.build chatClient config
+
 /// MAF-specific agent builder that inherits operations from AgentBuilderBase
 /// and adds the Run method to build an Agent using MAF.
 type AgentBuilder(chatClient: IChatClient) =
     inherit AgentBuilderBase()
 
     /// Builds the final agent using MAF integration
-    member _.Run(config: AgentConfig) : Agent =
+    member _.Run(config: AgentConfig) : ChatAgent =
         MAF.build chatClient config
 
 

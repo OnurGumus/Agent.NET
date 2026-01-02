@@ -62,8 +62,8 @@ module Executor =
             Execute = fn
         }
 
-    /// Creates an executor from an AgentNet Agent
-    let fromAgent (name: string) (agent: Agent) : Executor<string, string> =
+    /// Creates an executor from an AgentNet ChatAgent
+    let fromAgent (name: string) (agent: ChatAgent) : Executor<string, string> =
         {
             Name = name
             Execute = fun input _ -> agent.Chat input
