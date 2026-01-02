@@ -7,6 +7,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/Dotnet.gitignore
 
+# Visual Studio
+.vs/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -52,3 +55,9 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Serena MCP
+.serena/
+
+# Claude Code
+.claude/
