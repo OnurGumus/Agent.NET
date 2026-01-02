@@ -7,7 +7,8 @@ open AgentNet
 // XML doc comments become the AI's tool descriptions automatically!
 // ============================================================================
 
-/// Gets current stock information including price, change, and basic metrics
+/// <summary>Gets current stock information including price, change, and basic metrics</summary>
+/// <param name="symbol">The stock ticker symbol (e.g., AAPL, MSFT, GOOGL)</param>
 let getStockInfo (symbol: string) : string =
     // Simulated data - in production, call a real API
     let stocks =
@@ -29,7 +30,9 @@ Market Cap: ${marketCap}T"""
     | false, _ ->
         $"Stock symbol '{symbol}' not found."
 
-/// Gets historical price data for a stock
+/// <summary>Gets historical price data for a stock</summary>
+/// <param name="symbol">The stock ticker symbol</param>
+/// <param name="days">Number of days of history to retrieve (max 30)</param>
 let getHistoricalPrices (symbol: string) (days: int) : string =
     let days = min days 30
     let basePrice =
@@ -51,7 +54,8 @@ let getHistoricalPrices (symbol: string) (days: int) : string =
     let pricesStr = String.concat "\n" prices
     $"Historical prices for {symbol.ToUpper()} (last {days} days):\n{pricesStr}"
 
-/// Calculates volatility metrics for a stock
+/// <summary>Calculates volatility metrics for a stock</summary>
+/// <param name="symbol">The stock ticker symbol</param>
 let calculateVolatility (symbol: string) : string =
     let volatilities =
         dict [
@@ -71,7 +75,9 @@ Risk Rating: {rating}"""
     | false, _ ->
         $"Volatility data not available for '{symbol}'."
 
-/// Compares fundamental metrics between two stocks
+/// <summary>Compares fundamental metrics between two stocks</summary>
+/// <param name="symbol1">The first stock ticker symbol</param>
+/// <param name="symbol2">The second stock ticker symbol</param>
 let compareStocks (symbol1: string) (symbol2: string) : string =
     $"""Comparison: {symbol1.ToUpper()} vs {symbol2.ToUpper()}
 

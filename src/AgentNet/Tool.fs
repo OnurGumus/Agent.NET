@@ -8,10 +8,18 @@ open System.Xml.Linq
 open Microsoft.FSharp.Quotations
 open Microsoft.FSharp.Quotations.Patterns
 
+/// Parameter information extracted from function signature and XML docs
+type ParamInfo = {
+    Name: string
+    Description: string
+    Type: Type
+}
+
 /// Represents an AI tool that can be invoked by an agent
 type ToolDef = {
     Name: string
     Description: string
+    Parameters: ParamInfo list
     MethodInfo: MethodInfo
 }
 
@@ -46,8 +54,8 @@ type Tool private () =
         else
             $"M:{typeName}.{mi.Name}({paramTypes})"
 
-    /// Tries to get the summary text from XML documentation
-    static let tryGetXmlSummary (mi: MethodInfo) =
+    /// Tries to find the member element in XML documentation
+    static let tryFindMemberElement (mi: MethodInfo) =
         tryLoadXmlDoc mi.DeclaringType.Assembly
         |> Option.bind (fun doc ->
             let memberName = getXmlMemberName mi
@@ -59,12 +67,33 @@ type Tool private () =
                 |> Option.map (fun a -> a.Value = memberName)
                 |> Option.defaultValue false
             )
-            |> Option.bind (fun memberEl ->
-                memberEl.Element(ns + "summary")
-                |> Option.ofObj
-                |> Option.map (fun s -> s.Value.Trim())
-            )
         )
+
+    /// Extracts the summary text from a member element
+    static let extractSummary (memberEl: XElement) =
+        memberEl.Element(XName.Get("summary"))
+        |> Option.ofObj
+        |> Option.map (fun s -> s.Value.Trim())
+        |> Option.defaultValue ""
+
+    /// Extracts parameter descriptions from a member element
+    static let extractParamDescriptions (memberEl: XElement) =
+        memberEl.Elements(XName.Get("param"))
+        |> Seq.choose (fun paramEl ->
+            paramEl.Attribute(XName.Get("name"))
+            |> Option.ofObj
+            |> Option.map (fun nameAttr -> nameAttr.Value, paramEl.Value.Trim())
+        )
+        |> Map.ofSeq
+
+    /// Builds ParamInfo list from MethodInfo, optionally with XML descriptions
+    static let buildParamInfo (mi: MethodInfo) (descriptions: Map<string, string>) =
+        mi.GetParameters()
+        |> Array.map (fun p ->
+            let desc = descriptions |> Map.tryFind p.Name |> Option.defaultValue ""
+            { Name = p.Name; Description = desc; Type = p.ParameterType }
+        )
+        |> Array.toList
 
     /// Extracts MethodInfo from a quotation
     static let extractMethodInfo (expr: Expr) =
@@ -79,9 +108,11 @@ type Tool private () =
     static member create (expr: Expr<'a -> 'b>) : ToolDef =
         match extractMethodInfo expr with
         | Some mi ->
+            let parameters = buildParamInfo mi Map.empty
             {
                 Name = mi.Name
                 Description = ""
+                Parameters = parameters
                 MethodInfo = mi
             }
         | None ->
@@ -91,10 +122,14 @@ type Tool private () =
     static member createWithDocs (expr: Expr<'a -> 'b>) : ToolDef =
         match extractMethodInfo expr with
         | Some mi ->
-            let description = tryGetXmlSummary mi |> Option.defaultValue ""
+            let memberEl = tryFindMemberElement mi
+            let description = memberEl |> Option.map extractSummary |> Option.defaultValue ""
+            let paramDescs = memberEl |> Option.map extractParamDescriptions |> Option.defaultValue Map.empty
+            let parameters = buildParamInfo mi paramDescs
             {
                 Name = mi.Name
                 Description = description
+                Parameters = parameters
                 MethodInfo = mi
             }
         | None ->

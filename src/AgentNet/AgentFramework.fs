@@ -10,6 +10,9 @@ module MAF =
 
     /// Converts an AgentNet ToolDef to a Microsoft.Extensions.AI AIFunction
     let private toolToAIFunction (tool: ToolDef) : AIFunction =
+        // NOTE: tool.Parameters contains param descriptions extracted from XML docs,
+        // but AIFunctionFactoryOptions doesn't currently support passing them through.
+        // Tracking issue: https://github.com/microsoft/agent-framework/issues/1864
         let options = AIFunctionFactoryOptions(
             Name = tool.Name,
             Description = tool.Description

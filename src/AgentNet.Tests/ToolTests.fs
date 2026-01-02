@@ -22,6 +22,13 @@ let greetWithDocs (name: string) : string =
 let addWithDocs (x: int) (y: int) : int =
     x + y
 
+/// <summary>Formats a stock price for display</summary>
+/// <param name="symbol">The stock ticker symbol</param>
+/// <param name="price">The current price</param>
+/// <param name="currency">The currency code (e.g., USD)</param>
+let formatWithParamDocs (symbol: string) (price: decimal) (currency: string) : string =
+    $"{symbol}: {price} {currency}"
+
 [<Test>]
 let ``Tool.create extracts function name from quotation`` () =
     let tool = Tool.create <@ greet @>
@@ -76,3 +83,32 @@ let ``Tool.createWithDocs works with curried functions`` () =
 let ``Tool.createWithDocs falls back to empty when no XML docs`` () =
     let tool = Tool.createWithDocs <@ greet @>
     tool.Description =! ""
+
+[<Test>]
+let ``Tool.create populates Parameters with names and types`` () =
+    let tool = Tool.create <@ formatPrice @>
+    tool.Parameters.Length =! 3
+    tool.Parameters[0].Name =! "symbol"
+    tool.Parameters[0].Type =! typeof<string>
+    tool.Parameters[1].Name =! "price"
+    tool.Parameters[1].Type =! typeof<decimal>
+    tool.Parameters[2].Name =! "currency"
+    tool.Parameters[2].Type =! typeof<string>
+
+[<Test>]
+let ``Tool.create sets empty param descriptions by default`` () =
+    let tool = Tool.create <@ formatPrice @>
+    tool.Parameters |> List.iter (fun p -> p.Description =! "")
+
+[<Test>]
+let ``Tool.createWithDocs extracts param descriptions from XML docs`` () =
+    let tool = Tool.createWithDocs <@ formatWithParamDocs @>
+    tool.Parameters[0].Description =! "The stock ticker symbol"
+    tool.Parameters[1].Description =! "The current price"
+    tool.Parameters[2].Description =! "The currency code (e.g., USD)"
+
+[<Test>]
+let ``Tool.createWithDocs falls back to empty param descriptions when not documented`` () =
+    let tool = Tool.createWithDocs <@ greetWithDocs @>
+    // greetWithDocs has no <param> tags, so description should be empty
+    tool.Parameters[0].Description =! ""
