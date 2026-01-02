@@ -58,19 +58,3 @@ module AgentExtensions =
         /// Builds an agent from config using the specified chat client
         static member build (chatClient: IChatClient) (config: AgentConfig) : ChatAgent =
             MAF.build chatClient config
-
-/// MAF-specific agent builder that inherits operations from AgentBuilderBase
-/// and adds the Run method to build an Agent using MAF.
-type AgentBuilder(chatClient: IChatClient) =
-    inherit AgentBuilderBase()
-
-    /// Builds the final agent using MAF integration
-    member _.Run(config: AgentConfig) : ChatAgent =
-        MAF.build chatClient config
-
-
-/// The agent computation expression
-[<AutoOpen>]
-module AgentCE =
-    /// Creates an agent builder with the specified chat client
-    let agent (chatClient: IChatClient) = AgentBuilder(chatClient)
