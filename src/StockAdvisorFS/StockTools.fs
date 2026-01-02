@@ -87,24 +87,21 @@ let compareStocks (symbol1: string) (symbol2: string) : string =
 
 
 // ============================================================================
-// TOOL REGISTRATION - Clean pipeline style! Compare to C# attributes...
+// TOOL REGISTRATION - Quotation-based! Name and params extracted automatically
 // ============================================================================
 
 let stockInfoTool =
-    Tool.create getStockInfo
-    |> Tool.withName "getStockInfo"
+    Tool.create <@ getStockInfo @>
     |> Tool.describe "Gets current stock information including price, change, and basic metrics"
-    |> Tool.describeParam "arg" "The stock ticker symbol (e.g., AAPL, MSFT)"
 
 let historicalTool =
-    Tool.create ("getHistoricalPrices", "Gets historical price data for a stock", getHistoricalPrices)
+    Tool.create <@ getHistoricalPrices @>
+    |> Tool.describe "Gets historical price data for a stock"
 
 let volatilityTool =
-    Tool.create calculateVolatility
-    |> Tool.withName "calculateVolatility"
+    Tool.create <@ calculateVolatility @>
     |> Tool.describe "Calculates volatility metrics for a stock"
 
 let compareTool =
-    Tool.create compareStocks
-    |> Tool.withName "compareStocks"
+    Tool.create <@ compareStocks @>
     |> Tool.describe "Compares fundamental metrics between two stocks"

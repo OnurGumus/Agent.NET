@@ -4,23 +4,25 @@
 An F# library wrapping Microsoft Agent Framework to provide a clean, idiomatic way to create AI agents.
 
 ## Design Philosophy
-- **Tools** → Pipeline style (simple, functional)
+- **Tools** → Quotation-based (automatic metadata extraction)
 - **Agents** → Pipeline style (simple, functional)
 - **Workflows** → Computation expression (complex control flow)
 
 ## Current API
 
-### Tool Definition (Pipeline Style)
+### Tool Definition (Quotation-Based)
 ```fsharp
 let getStockInfo (symbol: string) : string =
     $"Price for {symbol}: $178.50"
 
 let stockInfoTool =
-    Tool.create getStockInfo
-    |> Tool.withName "getStockInfo"
+    Tool.create <@ getStockInfo @>
     |> Tool.describe "Gets current stock information"
-    |> Tool.describeParam "symbol" "The stock ticker symbol"
 ```
+
+The quotation `<@ getStockInfo @>` automatically extracts:
+- Function name → Tool name
+- Parameter names and types → Tool parameters (via MethodInfo)
 
 ### Agent Definition (Pipeline Style)
 ```fsharp
@@ -101,7 +103,7 @@ src/
 
 | Type | Description |
 |------|-------------|
-| `Tool` | Function with metadata (name, description, params) |
+| `ToolDef` | Tool definition with name, description, and MethodInfo |
 | `AgentConfig` | Agent configuration (name, instructions, tools) |
 | `ChatAgent` | Built agent with `Chat: string -> Async<string>` |
 | `Executor<'i,'o>` | Workflow step that transforms input to output |
@@ -110,12 +112,13 @@ src/
 | `ResultWorkflowDef<'i,'o,'e>` | Workflow with error short-circuiting |
 
 ## Design Decisions
-1. **Pipeline for tools and agents** - Simple configuration, functional style
-2. **CE for workflows** - Complex control flow benefits from declarative syntax
-3. **No attributes** - Tool metadata via pipeline functions
-4. **Pure functions first** - Define F# functions, then wrap
-5. **Type-safe workflows** - Input/output types threaded through builder
-6. **Composition via `toExecutor`** - Workflows can be nested
+1. **Quotations for tools** - Automatic name/param extraction, no sync issues
+2. **Pipeline for agents** - Simple configuration, functional style
+3. **CE for workflows** - Complex control flow benefits from declarative syntax
+4. **No attributes** - Metadata extracted from quotations
+5. **Pure functions first** - Define F# functions, then wrap with quotation
+6. **Type-safe workflows** - Input/output types threaded through builder
+7. **Composition via `toExecutor`** - Workflows can be nested
 
 ## Dependencies
 - Microsoft.Agents.AI

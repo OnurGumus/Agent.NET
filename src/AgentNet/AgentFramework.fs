@@ -1,8 +1,6 @@
 namespace AgentNet
 
-open System
 open System.Collections.Generic
-open System.Threading.Tasks
 open Microsoft.Agents.AI
 open Microsoft.Extensions.AI
 
@@ -12,14 +10,11 @@ module MAF =
 
     /// Converts an AgentNet ToolDef to a Microsoft.Extensions.AI AIFunction
     let private toolToAIFunction (tool: ToolDef) : AIFunction =
-        // Create a function that will be called by the agent
-        let invokeFunc (args: obj[]) : obj = tool.Invoke(args)
-
-        // Create AIFunction using the factory
-        AIFunctionFactory.Create(
-            Func<obj[], obj>(invokeFunc),
-            name = tool.Name,
-            description = tool.Description)
+        let options = AIFunctionFactoryOptions(
+            Name = tool.Name,
+            Description = tool.Description
+        )
+        AIFunctionFactory.Create(tool.MethodInfo, null, options)
 
     /// Creates a ChatClientAgent from an AgentNet Agent config
     let createAgent (chatClient: IChatClient) (config: AgentConfig) : AIAgent =
