@@ -3,7 +3,7 @@ open AgentNet
 open Azure.AI.OpenAI
 open Azure.Identity
 open Microsoft.Extensions.AI
-open StockAdvisorFS.StockTools
+open StockAdvisorFS
 
 let failIfNone msg opt = opt |> Option.defaultWith (fun () -> failwith msg)
 let tryGetEnv = Environment.GetEnvironmentVariable >> Option.ofObj
@@ -13,6 +13,14 @@ let deploymentName = tryGetEnv "AZURE_OPENAI_DEPLOYMENT" |> Option.defaultValue 
 
 let client = AzureOpenAIClient(Uri(endpoint), DefaultAzureCredential())
 let chatClient = client.GetChatClient(deploymentName).AsIChatClient()
+
+// Create tools using XML doc comments for descriptions
+let stockInfoTool =  Tool.createWithDocs <@ StockTools.getStockInfo @>
+let historicalTool = Tool.createWithDocs <@ StockTools.getHistoricalPrices @>
+let volatilityTool = Tool.createWithDocs <@ StockTools.calculateVolatility @>
+let compareTool =    Tool.createWithDocs <@ StockTools.compareStocks @>
+
+// Create the Stock Advisor agent
 let stockAdvisor = 
     Agent.create """
         You are a helpful stock analysis assistant. You help users analyze stocks,
@@ -45,7 +53,7 @@ let rec loop () = async {
         return ()
     else
         printf "\nStockAdvisor: "
-        let! response = stockAdvisor.Chat input
+        let! response = stockAdvisor.Chat(input)
         printfn "%s\n" response
         return! loop ()
 }

@@ -1,7 +1,5 @@
 module StockAdvisorFS.StockTools
 
-open AgentNet
-
 // ============================================================================
 // PURE F# FUNCTIONS - Easy to test, compose, and reuse
 // XML doc comments become the AI's tool descriptions automatically!
@@ -91,12 +89,3 @@ let compareStocks (symbol1: string) (symbol2: string) : string =
 - Revenue Growth: {if symbol2.ToUpper() = "AAPL" then "8.2%" else "12.5%"}
 - Profit Margin: {if symbol2.ToUpper() = "AAPL" then "25.3%" else "36.7%"}"""
 
-
-// ============================================================================
-// TOOL REGISTRATION - Descriptions extracted from XML docs automatically!
-// ============================================================================
-
-let stockInfoTool = Tool.createWithDocs <@ getStockInfo @>
-let historicalTool = Tool.createWithDocs <@ getHistoricalPrices @>
-let volatilityTool = Tool.createWithDocs <@ calculateVolatility @>
-let compareTool = Tool.createWithDocs <@ compareStocks @>
