@@ -12,14 +12,20 @@
 What if building AI agents looked like this?
 
 ```fsharp
-/// Gets current stock information
+/// <summary>Gets current stock information</summary>
+/// <param name="symbol">The stock ticker symbol (e.g., AAPL)</param>
 let getStockInfo (symbol: string) : string =
     StockService.GetQuote(symbol)  // Your existing C# service works here
 
 let tool = Tool.createWithDocs <@ getStockInfo @>
+
+let agent =
+    Agent.create "You are a helpful stock assistant."
+    |> Agent.withTools [tool]
+    |> Agent.build chatClient
 ```
 
-That's it. Add a small F# project to your solution, wrap your existing services, and you have AI-ready tools. The function name becomes the tool name. The XML docs become the description. The parameter names and types are extracted automatically. No attributes. No magic strings. No sync issues.
+That's it. The function name becomes the tool name. The XML docs become the description. The parameter names and types are extracted automatically. No attributes. No magic strings. No sync issues.
 
 And when you need to orchestrate multiple agents?
 
