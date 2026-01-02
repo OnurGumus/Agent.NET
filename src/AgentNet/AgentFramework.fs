@@ -10,8 +10,8 @@ open Microsoft.Extensions.AI
 [<RequireQualifiedAccess>]
 module MAF =
 
-    /// Converts an AgentNet Tool to a Microsoft.Extensions.AI AIFunction
-    let private toolToAIFunction (tool: Tool) : AIFunction =
+    /// Converts an AgentNet ToolDef to a Microsoft.Extensions.AI AIFunction
+    let private toolToAIFunction (tool: ToolDef) : AIFunction =
         // Create a function that will be called by the agent
         let invokeFunc (args: obj[]) : obj = tool.Invoke(args)
 

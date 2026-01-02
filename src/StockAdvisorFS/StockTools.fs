@@ -91,20 +91,20 @@ let compareStocks (symbol1: string) (symbol2: string) : string =
 // ============================================================================
 
 let stockInfoTool =
-    Tool.fromFn getStockInfo
+    Tool.create getStockInfo
     |> Tool.withName "getStockInfo"
     |> Tool.describe "Gets current stock information including price, change, and basic metrics"
     |> Tool.describeParam "arg" "The stock ticker symbol (e.g., AAPL, MSFT)"
 
 let historicalTool =
-    Tool.fromFnNamed "getHistoricalPrices" "Gets historical price data for a stock" getHistoricalPrices
+    Tool.create ("getHistoricalPrices", "Gets historical price data for a stock", getHistoricalPrices)
 
 let volatilityTool =
-    Tool.fromFn calculateVolatility
+    Tool.create calculateVolatility
     |> Tool.withName "calculateVolatility"
     |> Tool.describe "Calculates volatility metrics for a stock"
 
 let compareTool =
-    Tool.fromFn compareStocks
+    Tool.create compareStocks
     |> Tool.withName "compareStocks"
     |> Tool.describe "Compares fundamental metrics between two stocks"

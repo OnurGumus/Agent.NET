@@ -6,7 +6,7 @@ open System
 type AgentConfig = {
     Name: string option
     Instructions: string
-    Tools: Tool list
+    Tools: ToolDef list
 }
 
 /// Represents an AI agent that can chat and use tools
@@ -27,9 +27,9 @@ type Agent =
         { config with Name = Some name }
 
     /// Adds a single tool to the agent
-    static member withTool (tool: Tool) (config: AgentConfig) : AgentConfig =
+    static member withTool (tool: ToolDef) (config: AgentConfig) : AgentConfig =
         { config with Tools = config.Tools @ [tool] }
 
     /// Adds a list of tools to the agent
-    static member withTools (tools: Tool list) (config: AgentConfig) : AgentConfig =
+    static member withTools (tools: ToolDef list) (config: AgentConfig) : AgentConfig =
         { config with Tools = config.Tools @ tools }
