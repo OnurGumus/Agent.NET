@@ -17,7 +17,9 @@ module MAF =
             Name = tool.Name,
             Description = tool.Description
         )
-        AIFunctionFactory.Create(tool.MethodInfo, null, options)
+        // Use the (MethodInfo, object, options) overload for static methods
+        // The explicit annotation ensures correct overload resolution
+        AIFunctionFactory.Create(method = tool.MethodInfo, target = null, options = options)
 
     /// Creates a ChatClientAgent from an AgentNet Agent config
     let createAgent (chatClient: IChatClient) (config: AgentConfig) : AIAgent =
