@@ -5,13 +5,17 @@ namespace StockAdvisorCS;
 /// <summary>
 /// Stock analysis tools for the StockAdvisor agent.
 /// Each method decorated with [Description] becomes available to the AI via AIFunctionFactory.
+/// All tools are async to simulate real API calls.
 /// </summary>
 public static class StockTools
 {
     [Description("Gets current stock information including price, change, and basic metrics for a given ticker symbol")]
-    public static string GetStockInfo(
+    public static async Task<string> GetStockInfo(
         [Description("The stock ticker symbol (e.g., AAPL, MSFT, GOOGL)")] string symbol)
     {
+        // Simulate API latency
+        await Task.Delay(50);
+
         // Simulated stock data - in production, this would call a real API
         var stocks = new Dictionary<string, (decimal price, decimal change, decimal pe, decimal marketCap)>
         {
@@ -37,10 +41,13 @@ public static class StockTools
     }
 
     [Description("Gets historical price data for a stock over a specified number of days")]
-    public static string GetHistoricalPrices(
+    public static async Task<string> GetHistoricalPrices(
         [Description("The stock ticker symbol")] string symbol,
         [Description("Number of days of historical data to retrieve (max 30)")] int days)
     {
+        // Simulate API latency
+        await Task.Delay(75);
+
         days = Math.Min(days, 30);
 
         // Simulated historical data
@@ -66,9 +73,12 @@ public static class StockTools
     }
 
     [Description("Calculates volatility metrics for a stock based on recent price movements")]
-    public static string CalculateVolatility(
+    public static async Task<string> CalculateVolatility(
         [Description("The stock ticker symbol")] string symbol)
     {
+        // Simulate API latency
+        await Task.Delay(50);
+
         // Simulated volatility data
         var volatilities = new Dictionary<string, (decimal daily, decimal annual, string rating)>
         {
@@ -93,10 +103,13 @@ public static class StockTools
     }
 
     [Description("Compares fundamental metrics between two stocks to help with investment decisions")]
-    public static string CompareStocks(
+    public static async Task<string> CompareStocks(
         [Description("First stock ticker symbol")] string symbol1,
         [Description("Second stock ticker symbol")] string symbol2)
     {
+        // Simulate API latency
+        await Task.Delay(100);
+
         return $"""
             Comparison: {symbol1.ToUpper()} vs {symbol2.ToUpper()}
 
