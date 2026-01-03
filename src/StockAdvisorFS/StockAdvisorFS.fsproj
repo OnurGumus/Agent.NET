@@ -8,6 +8,9 @@
 
   <ItemGroup>
     <Compile Include="StockTools.fs" />
+    <Compile Include="AgentChatSample.fs" />
+    <Compile Include="WorkflowSample.fs" />
+    <Compile Include="SingleAnalysisSample.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
