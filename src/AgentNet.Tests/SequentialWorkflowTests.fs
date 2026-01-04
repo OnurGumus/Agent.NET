@@ -22,7 +22,7 @@ let ``Simple sequential workflow executes in order``() =
             Sources = ["Source A"; "Source B"]
             RawFindings = $"Findings about {topic.Name}"
         }
-        |> toTask
+        |> Task.fromResult
 
     let analyzer (research: ResearchData) = 
         {
@@ -30,7 +30,7 @@ let ``Simple sequential workflow executes in order``() =
             Insights = [$"Insight from {research.Sources.Length} sources"]
             Confidence = 0.85
         }
-        |> toTask
+        |> Task.fromResult
 
     let writer (analysis: AnalysisResult) =
         {
@@ -38,7 +38,7 @@ let ``Simple sequential workflow executes in order``() =
             Title = $"Report: {analysis.Research.Topic.Name}"
             Summary = $"Based on {analysis.Insights.Length} insights with {analysis.Confidence} confidence"
         }
-        |> toTask
+        |> Task.fromResult
 
     // Build the workflow using the DSL
     let myWorkflow = workflow {
@@ -192,11 +192,11 @@ let ``Workflow with type transformations through pipeline``() =
     result.LongestToken =! "quick"  // or "brown" or "jumps" - all 5 chars, maxBy returns first
 
 [<Test>]
-let ``Sync functions work with toTask wrapper``() =
-    // Arrange: Sync functions using |> toTask pattern
-    let parse (s: string) = s.Length |> toTask
-    let double (n: int) = n * 2 |> toTask
-    let format (n: int) = $"Result: {n}" |> toTask
+let ``Sync functions work with Task.fromResult wrapper``() =
+    // Arrange: Sync functions using |> Task.fromResult pattern
+    let parse (s: string) = s.Length |> Task.fromResult
+    let double (n: int) = n * 2 |> Task.fromResult
+    let format (n: int) = $"Result: {n}" |> Task.fromResult
 
     let syncWorkflow = workflow {
         start parse
@@ -211,16 +211,16 @@ let ``Sync functions work with toTask wrapper``() =
     result =! "Result: 10"
 
 [<Test>]
-let ``Mixed toTask and async functions in workflow``() =
-    // Arrange: Mix of toTask pattern and async functions
-    let parseSync (s: string) = s.Split(' ') |> Array.toList |> toTask
+let ``Mixed Task.fromResult and async functions in workflow``() =
+    // Arrange: Mix of Task.fromResult pattern and async functions
+    let parseSync (s: string) = s.Split(' ') |> Array.toList |> Task.fromResult
     let fetchAsync (words: string list) = task { return words.Length }
-    let formatSync (count: int) = $"Word count: {count}" |> toTask
+    let formatSync (count: int) = $"Word count: {count}" |> Task.fromResult
 
     let mixedWorkflow = workflow {
-        start parseSync     // Uses toTask - no operator
+        start parseSync     // Uses Task.fromResult - no operator
         next fetchAsync     // Async - no operator
-        next formatSync     // Uses toTask - no operator
+        next formatSync     // Uses Task.fromResult - no operator
     }
 
     // Act

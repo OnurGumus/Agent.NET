@@ -434,15 +434,14 @@ type WorkflowBuilder() =
         { Steps = state.Steps }
 
 
+module Task = 
+    /// An convenient alias for Task.FromResult. Wraps a value in a completed Task.
+    let fromResult x = Task.FromResult x
+
 /// The workflow computation expression builder instance
 [<AutoOpen>]
 module WorkflowCE =
     let workflow = WorkflowBuilder()
-
-    /// Wraps a value in Task. Use at end of sync function bodies.
-    /// This allows sync functions to work in workflows without operators at the call site.
-    /// Example: let parseFn (s: string) = s.Length |> toTask
-    let toTask x = Task.FromResult x
 
     /// Prefix operator to convert any supported type to Step<'i, 'o>.
     /// Supports: Task fn, Async fn, TypedAgent, Executor, or Step passthrough.

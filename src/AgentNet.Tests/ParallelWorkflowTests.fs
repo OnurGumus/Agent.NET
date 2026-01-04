@@ -17,21 +17,23 @@ type DataPacket = { Id: int; Value: string }
 
 [<Test>]
 let ``FanOut executes all executors and FanIn aggregates results``() =
-    // Arrange: All functions use toTask pattern
-    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 } |> toTask
+    // Arrange: All functions use Task.fromResult pattern
+    let loadData (symbol: string) = 
+        { Symbol = symbol; Price = 150.0 } |> Task.fromResult
+
     let technicalAnalyst (data: StockData) =
-        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> toTask
+        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> Task.fromResult
 
     let fundamentalAnalyst (data: StockData) =
-        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> toTask
+        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> Task.fromResult
 
     let sentimentAnalyst (data: StockData) =
-        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> toTask
+        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> Task.fromResult
 
     let summarize (reports: AnalystReport list) =
         let avgScore = reports |> List.averageBy (fun r -> float r.Score)
         let consensus = if avgScore >= 7.0 then "Buy" else "Hold"
-        { Reports = reports; Consensus = consensus; AverageScore = avgScore } |> toTask
+        { Reports = reports; Consensus = consensus; AverageScore = avgScore } |> Task.fromResult
 
     let parallelWorkflow = workflow {
         start loadData
@@ -172,17 +174,17 @@ let ``FanOut with list syntax and + operator for 6+ branches``() =
     result =! 81
 
 [<Test>]
-let ``FanOut with list syntax, toTask and + operator for 6+ branches``() =
+let ``FanOut with list syntax, Task.fromResult and + operator for 6+ branches``() =
     // Arrange: 6 branches requires list syntax with step/+ operator
     let init = Executor.fromFn "Init" (fun (x: int) -> x)
 
-    let add1 (x: int) = x + 1 |> toTask
-    let add2 (x: int) = x + 2 |> toTask
-    let add3 (x: int) = x + 3 |> toTask
-    let add4 (x: int) = x + 4 |> toTask
-    let add5 (x: int) = x + 5 |> toTask
-    let add6 (x: int) = x + 6 |> toTask
-    let sum (nums: int list) = List.sum nums |> toTask
+    let add1 (x: int) = x + 1 |> Task.fromResult
+    let add2 (x: int) = x + 2 |> Task.fromResult
+    let add3 (x: int) = x + 3 |> Task.fromResult
+    let add4 (x: int) = x + 4 |> Task.fromResult
+    let add5 (x: int) = x + 5 |> Task.fromResult
+    let add6 (x: int) = x + 6 |> Task.fromResult
+    let sum (nums: int list) = List.sum nums |> Task.fromResult
 
     let parallelWorkflow = workflow {
         start init
