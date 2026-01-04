@@ -190,3 +190,41 @@ let ``Workflow with type transformations through pipeline``() =
     // Assert
     result.Count =! 5
     result.LongestToken =! "quick"  // or "brown" or "jumps" - all 5 chars, maxBy returns first
+
+[<Test>]
+let ``Sync functions work with percent operator``() =
+    // Arrange: All sync functions using % operator
+    let parse (s: string) = s.Length
+    let double (n: int) = n * 2
+    let format (n: int) = $"Result: {n}"
+
+    let syncWorkflow = workflow {
+        start %parse
+        next %double
+        next %format
+    }
+
+    // Act
+    let result = Workflow.runSync "hello" syncWorkflow
+
+    // Assert
+    result =! "Result: 10"
+
+[<Test>]
+let ``Mixed sync and async functions in workflow``() =
+    // Arrange: Mix of sync (%) and async functions
+    let parseSync (s: string) = s.Split(' ') |> Array.toList
+    let fetchAsync (words: string list) = task { return words.Length }
+    let formatSync (count: int) = $"Word count: {count}"
+
+    let mixedWorkflow = workflow {
+        start %parseSync
+        next fetchAsync
+        next %formatSync
+    }
+
+    // Act
+    let result = Workflow.runSync "one two three four" mixedWorkflow
+
+    // Assert
+    result =! "Word count: 4"

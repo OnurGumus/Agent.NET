@@ -78,11 +78,12 @@ module Executor =
         }
 
 
-/// A workflow step type that unifies Task functions, Async functions, TypedAgents, and Executors.
+/// A workflow step type that unifies Task functions, Async functions, sync functions, TypedAgents, and Executors.
 /// This enables clean workflow syntax and mixed-type fanOut operations.
 type Step<'i, 'o> =
     | TaskStep of ('i -> Task<'o>)
     | AsyncStep of ('i -> Async<'o>)
+    | SyncStep of ('i -> 'o)
     | AgentStep of TypedAgent<'i, 'o>
     | ExecutorStep of Executor<'i, 'o>
 
@@ -149,6 +150,7 @@ module WorkflowInternal =
         match step with
         | TaskStep fn -> Executor.fromTask name fn
         | AsyncStep fn -> Executor.fromAsync name fn
+        | SyncStep fn -> Executor.fromFn name fn
         | AgentStep agent -> Executor.fromTypedAgent name agent
         | ExecutorStep exec -> { exec with Name = name }
 
@@ -451,6 +453,11 @@ module WorkflowCE =
     /// Prefix operator shorthand for 'step'. Converts any supported type to Step<'i, 'o>.
     /// Example: fanOut [+fn1; +fn2; +fn3; +fn4; +fn5; +fn6]
     let inline (~+) (x: ^T) : Step<'i, 'o> = step x
+
+    /// Prefix operator for sync functions. Wraps ('i -> 'o) as SyncStep.
+    /// Use this to explicitly mark synchronous functions in workflows.
+    /// Example: workflow { start %parseFn; next %transformFn }
+    let inline (~%) (fn: 'i -> 'o) : Step<'i, 'o> = SyncStep fn
 
 
 /// Functions for executing workflows
