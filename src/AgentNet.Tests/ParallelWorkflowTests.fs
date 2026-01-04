@@ -37,7 +37,7 @@ let ``FanOut executes all executors and FanIn aggregates results``() =
 
     let parallelWorkflow = workflow {
         start loadData
-        fanOut [ technicalAnalyst; fundamentalAnalyst; sentimentAnalyst ]
+        fanOut [ s technicalAnalyst; s fundamentalAnalyst; s sentimentAnalyst ]
         fanIn summarize
     }
 
@@ -62,7 +62,7 @@ let ``FanOut with two executors``() =
 
     let parallelWorkflow = workflow {
         start prepare
-        fanOut [ addTen; multiplyThree ]
+        fanOut [ s addTen; s multiplyThree ]
         fanIn combine
     }
 
@@ -86,7 +86,7 @@ let ``FanOut preserves order of results``() =
 
     let parallelWorkflow = workflow {
         start identity
-        fanOut [ tag0; tag1; tag2 ]
+        fanOut [ s tag0; s tag1; s tag2 ]
         fanIn join
     }
 
@@ -110,7 +110,7 @@ let ``FanOut followed by additional processing``() =
 
     let parallelWorkflow = workflow {
         start init
-        fanOut [ double; triple ]
+        fanOut [ s double; s triple ]
         fanIn sum
         next format
     }
@@ -137,7 +137,7 @@ let ``FanOut with custom record types``() =
 
     let parallelWorkflow = workflow {
         start createPackets
-        fanOut [ processA; processB ]
+        fanOut [ s processA; s processB ]
         fanIn merge
     }
 

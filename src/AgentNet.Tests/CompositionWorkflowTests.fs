@@ -232,7 +232,7 @@ let ``Nested workflow with parallel fanOut inside``() =
 
     let parallelInnerWorkflow = workflow {
         start prepare
-        fanOut [ branch1; branch2 ]
+        fanOut [ s branch1; s branch2 ]
         fanIn combine
     }
     let parallelExecutor = Workflow.toExecutor "ParallelInnerWorkflow" parallelInnerWorkflow

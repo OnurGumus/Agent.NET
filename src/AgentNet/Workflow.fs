@@ -78,6 +78,25 @@ module Executor =
         }
 
 
+/// A workflow step type that unifies Task functions, Async functions, TypedAgents, and Executors.
+/// This enables clean workflow syntax and mixed-type fanOut operations.
+type Step<'i, 'o> =
+    | TaskStep of ('i -> Task<'o>)
+    | AsyncStep of ('i -> Async<'o>)
+    | AgentStep of TypedAgent<'i, 'o>
+    | ExecutorStep of Executor<'i, 'o>
+
+
+/// SRTP witness type for converting various types to Step.
+/// Uses the type class pattern to enable inline resolution at call sites.
+type StepConv = StepConv with
+    static member inline ToStep(_: StepConv, fn: 'i -> Task<'o>) : Step<'i, 'o> = TaskStep fn
+    static member inline ToStep(_: StepConv, fn: 'i -> Async<'o>) : Step<'i, 'o> = AsyncStep fn
+    static member inline ToStep(_: StepConv, agent: TypedAgent<'i, 'o>) : Step<'i, 'o> = AgentStep agent
+    static member inline ToStep(_: StepConv, exec: Executor<'i, 'o>) : Step<'i, 'o> = ExecutorStep exec
+    static member inline ToStep(_: StepConv, step: Step<'i, 'o>) : Step<'i, 'o> = step  // Passthrough
+
+
 /// Backoff strategy for retries
 type BackoffStrategy =
     | Immediate
@@ -121,8 +140,58 @@ type WorkflowState<'input, 'output> = {
 }
 
 
-/// Internal module for workflow building
-module internal WorkflowInternal =
+/// Module for workflow building internals (public for inline SRTP support)
+[<AutoOpen>]
+module WorkflowInternal =
+
+    /// Converts a Step<'i, 'o> to an Executor<'i, 'o>
+    let stepToExecutor<'i, 'o> (name: string) (step: Step<'i, 'o>) : Executor<'i, 'o> =
+        match step with
+        | TaskStep fn -> Executor.fromTask name fn
+        | AsyncStep fn -> Executor.fromAsync name fn
+        | AgentStep agent -> Executor.fromTypedAgent name agent
+        | ExecutorStep exec -> { exec with Name = name }
+
+    /// Wraps a Step as an untyped WorkflowStep
+    let wrapStep<'i, 'o> (name: string) (step: Step<'i, 'o>) : WorkflowStep =
+        let exec = stepToExecutor name step
+        Step (exec.Name, fun input ctx -> task {
+            let typedInput = input :?> 'i
+            let! result = exec.Execute typedInput ctx
+            return result :> obj
+        })
+
+    /// Wraps a list of Steps as parallel execution (supports mixed types!)
+    let wrapStepParallel<'i, 'o> (steps: Step<'i, 'o> list) : WorkflowStep =
+        let wrappedFns =
+            steps
+            |> List.mapi (fun i step ->
+                let exec = stepToExecutor $"Parallel {i+1}" step
+                fun (input: obj) (ctx: WorkflowContext) -> task {
+                    let typedInput = input :?> 'i
+                    let! result = exec.Execute typedInput ctx
+                    return result :> obj
+                })
+        Parallel wrappedFns
+
+    /// Wraps a Step as a fan-in aggregator, handling obj list → typed list conversion
+    let wrapStepFanIn<'elem, 'o> (name: string) (step: Step<'elem list, 'o>) : WorkflowStep =
+        let exec = stepToExecutor name step
+        Step (exec.Name, fun input ctx -> task {
+            let objList = input :?> obj list
+            let typedList = objList |> List.map (fun o -> o :?> 'elem)
+            let! result = exec.Execute typedList ctx
+            return result :> obj
+        })
+
+    /// Converts a Step to a fallback function for resilience settings
+    let stepToFallback<'i, 'o> (step: Step<'i, 'o>) : (obj -> WorkflowContext -> Task<obj>) =
+        let exec = stepToExecutor "Fallback" step
+        fun (input: obj) (ctx: WorkflowContext) -> task {
+            let typedInput = input :?> 'i
+            let! result = exec.Execute typedInput ctx
+            return result :> obj
+        }
 
     /// Wraps a typed executor as an untyped step
     let wrapExecutor<'i, 'o> (exec: Executor<'i, 'o>) : WorkflowStep =
@@ -186,84 +255,36 @@ type WorkflowBuilder() =
     member _.Yield(_) : WorkflowState<'a, 'a> = { Steps = []; StepCount = 0 }
 
     // ============ START OPERATIONS ============
+    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
 
-    /// Starts workflow with a Task-returning function
+    /// Starts workflow with any supported step type (uses SRTP for type resolution)
     [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, fn: 'i -> Task<'o>) : WorkflowState<'i, 'o> =
+    member inline _.Start(state: WorkflowState<_, _>, x: ^T) : WorkflowState<'i, 'o> =
+        let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
         let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Starts workflow with a named Task-returning function
+    /// Starts workflow with a named step
     [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, name: string, fn: 'i -> Task<'o>) : WorkflowState<'i, 'o> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Starts workflow with an Async-returning function
-    [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, fn: 'i -> Async<'o>) : WorkflowState<'i, 'o> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Starts workflow with a named Async-returning function
-    [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, name: string, fn: 'i -> Async<'o>) : WorkflowState<'i, 'o> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Starts workflow with a TypedAgent
-    [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, agent: TypedAgent<'i, 'o>) : WorkflowState<'i, 'o> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Starts workflow with a named TypedAgent
-    [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, name: string, agent: TypedAgent<'i, 'o>) : WorkflowState<'i, 'o> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Starts workflow with an Executor
-    [<CustomOperation("start")>]
-    member _.Start(state: WorkflowState<_, _>, executor: Executor<'i, 'o>) : WorkflowState<'i, 'o> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor executor]; StepCount = state.StepCount + 1 }
+    member inline _.Start(state: WorkflowState<_, _>, name: string, x: ^T) : WorkflowState<'i, 'o> =
+        let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
     // ============ NEXT OPERATIONS ============
+    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
 
-    /// Adds a Task-returning function as next step
+    /// Adds any supported step type as next step (uses SRTP for type resolution)
     [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, fn: 'middle -> Task<'output>) : WorkflowState<'input, 'output> =
+    member inline _.Next(state: WorkflowState<'input, 'middle>, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
         let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Adds a named Task-returning function as next step
+    /// Adds a named step as next step
     [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, name: string, fn: 'middle -> Task<'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Adds an Async-returning function as next step
-    [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, fn: 'middle -> Async<'output>) : WorkflowState<'input, 'output> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Adds a named Async-returning function as next step
-    [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, name: string, fn: 'middle -> Async<'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Adds a TypedAgent as next step
-    [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, agent: TypedAgent<'middle, 'output>) : WorkflowState<'input, 'output> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Adds a named TypedAgent as next step
-    [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, name: string, agent: TypedAgent<'middle, 'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Adds an Executor as next step
-    [<CustomOperation("next")>]
-    member _.Next(state: WorkflowState<'input, 'middle>, executor: Executor<'middle, 'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor executor]; StepCount = state.StepCount + 1 }
+    member inline _.Next(state: WorkflowState<'input, 'middle>, name: string, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
     // ============ ROUTING ============
 
@@ -274,69 +295,29 @@ type WorkflowBuilder() =
         { Steps = state.Steps @ [WorkflowInternal.wrapRouter router]; StepCount = state.StepCount + 1 }
 
     // ============ FANOUT OPERATIONS ============
+    // Takes a list of Step values - supports mixed types (Task, Async, Agent, Executor)!
+    // Use the 's' helper to convert: fanOut [s taskFn; s asyncFn; s agent]
 
-    /// Runs multiple Task-returning functions in parallel (fan-out)
+    /// Runs multiple steps in parallel (fan-out) - supports mixed types via Step list
     [<CustomOperation("fanOut")>]
-    member _.FanOut(state: WorkflowState<'input, 'middle>, fns: ('middle -> Task<'o>) list) : WorkflowState<'input, 'o list> =
-        let executors = fns |> List.mapi (fun i fn -> Executor.fromTask $"Parallel {i+1}" fn)
-        { Steps = state.Steps @ [WorkflowInternal.wrapParallel executors]; StepCount = state.StepCount + 1 }
-
-    /// Runs multiple Async-returning functions in parallel (fan-out)
-    [<CustomOperation("fanOut")>]
-    member _.FanOut(state: WorkflowState<'input, 'middle>, fns: ('middle -> Async<'o>) list) : WorkflowState<'input, 'o list> =
-        let executors = fns |> List.mapi (fun i fn -> Executor.fromAsync $"Parallel {i+1}" fn)
-        { Steps = state.Steps @ [WorkflowInternal.wrapParallel executors]; StepCount = state.StepCount + 1 }
-
-    /// Runs multiple TypedAgents in parallel (fan-out)
-    [<CustomOperation("fanOut")>]
-    member _.FanOut(state: WorkflowState<'input, 'middle>, agents: TypedAgent<'middle, 'o> list) : WorkflowState<'input, 'o list> =
-        let executors = agents |> List.mapi (fun i a -> Executor.fromTypedAgent $"Parallel {i+1}" a)
-        { Steps = state.Steps @ [WorkflowInternal.wrapParallel executors]; StepCount = state.StepCount + 1 }
-
-    /// Runs multiple executors in parallel on the same input (fan-out)
-    [<CustomOperation("fanOut")>]
-    member _.FanOut(state: WorkflowState<'input, 'middle>, executors: Executor<'middle, 'o> list) : WorkflowState<'input, 'o list> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapParallel executors]; StepCount = state.StepCount + 1 }
+    member _.FanOut(state: WorkflowState<'input, 'middle>, steps: Step<'middle, 'o> list) : WorkflowState<'input, 'o list> =
+        { Steps = state.Steps @ [WorkflowInternal.wrapStepParallel steps]; StepCount = state.StepCount + 1 }
 
     // ============ FANIN OPERATIONS ============
+    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
 
-    /// Aggregates parallel results with a Task-returning function (fan-in)
+    /// Aggregates parallel results with any supported step type (uses SRTP for type resolution)
     [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, fn: 'elem list -> Task<'output>) : WorkflowState<'input, 'output> =
+    member inline _.FanIn(state: WorkflowState<'input, 'elem list>, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'elem list, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'elem list, 'output>) (StepConv, x))
         let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
+        { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn name step]; StepCount = state.StepCount + 1 }
 
-    /// Aggregates parallel results with a named Task-returning function (fan-in)
+    /// Aggregates parallel results with a named step
     [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, name: string, fn: 'elem list -> Task<'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromTask name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with an Async-returning function (fan-in)
-    [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, fn: 'elem list -> Async<'output>) : WorkflowState<'input, 'output> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with a named Async-returning function (fan-in)
-    [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, name: string, fn: 'elem list -> Async<'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromAsync name fn)]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with a TypedAgent (fan-in)
-    [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, agent: TypedAgent<'elem list, 'output>) : WorkflowState<'input, 'output> =
-        let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with a named TypedAgent (fan-in)
-    [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, name: string, agent: TypedAgent<'elem list, 'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn (Executor.fromTypedAgent name agent)]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with an executor (fan-in)
-    [<CustomOperation("fanIn")>]
-    member _.FanIn(state: WorkflowState<'input, 'elem list>, executor: Executor<'elem list, 'output>) : WorkflowState<'input, 'output> =
-        { Steps = state.Steps @ [WorkflowInternal.wrapFanIn executor]; StepCount = state.StepCount + 1 }
+    member inline _.FanIn(state: WorkflowState<'input, 'elem list>, name: string, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'elem list, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'elem list, 'output>) (StepConv, x))
+        { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn name step]; StepCount = state.StepCount + 1 }
 
     // ============ RESILIENCE OPERATIONS ============
 
@@ -356,45 +337,13 @@ type WorkflowBuilder() =
         { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Timeout = Some duration }) }
 
     // ============ FALLBACK OPERATIONS ============
+    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
 
-    /// Sets fallback Task-returning function for the previous step
+    /// Sets fallback for the previous step (uses SRTP for type resolution)
     [<CustomOperation("fallback")>]
-    member _.Fallback(state: WorkflowState<'input, 'output>, fn: 'middle -> Task<'output>) : WorkflowState<'input, 'output> =
-        let fallbackFn (input: obj) (_ctx: WorkflowContext) : Task<obj> = task {
-            let typedInput = unbox<'middle> input
-            let! result = fn typedInput
-            return box result
-        }
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
-
-    /// Sets fallback Async-returning function for the previous step
-    [<CustomOperation("fallback")>]
-    member _.Fallback(state: WorkflowState<'input, 'output>, fn: 'middle -> Async<'output>) : WorkflowState<'input, 'output> =
-        let fallbackFn (input: obj) (_ctx: WorkflowContext) : Task<obj> = task {
-            let typedInput = unbox<'middle> input
-            let! result = fn typedInput |> Async.StartAsTask
-            return box result
-        }
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
-
-    /// Sets fallback TypedAgent for the previous step
-    [<CustomOperation("fallback")>]
-    member _.Fallback(state: WorkflowState<'input, 'output>, agent: TypedAgent<'middle, 'output>) : WorkflowState<'input, 'output> =
-        let fallbackFn (input: obj) (_ctx: WorkflowContext) : Task<obj> = task {
-            let typedInput = unbox<'middle> input
-            let! result = TypedAgent.invoke typedInput agent
-            return box result
-        }
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
-
-    /// Sets fallback executor for the previous step
-    [<CustomOperation("fallback")>]
-    member _.Fallback(state: WorkflowState<'input, 'output>, executor: Executor<'middle, 'output>) : WorkflowState<'input, 'output> =
-        let fallbackFn (input: obj) (ctx: WorkflowContext) : Task<obj> = task {
-            let typedInput = unbox<'middle> input
-            let! result = executor.Execute typedInput ctx
-            return box result
-        }
+    member inline _.Fallback(state: WorkflowState<'input, 'output>, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
+        let fallbackFn = WorkflowInternal.stepToFallback step
         { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
 
     /// Builds the final workflow definition
@@ -409,6 +358,12 @@ module WorkflowCE =
 
     /// Alias for Task.FromResult - lifts sync values to Task for workflow compatibility
     let toTask = Task.FromResult
+
+    /// Converts any supported type to Step<'i, 'o> for use in fanOut lists.
+    /// Supports: Task fn, Async fn, TypedAgent, Executor, or Step passthrough.
+    /// Example: fanOut [s taskFn; s asyncFn; s agent]
+    let inline s (x: ^T) : Step<'i, 'o> =
+        ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
 
 
 /// Functions for executing workflows
