@@ -18,27 +18,26 @@ type DataPacket = { Id: int; Value: string }
 [<Test>]
 let ``FanOut executes all executors and FanIn aggregates results``() =
     // Arrange
-    let loadDataFn (symbol: string) = { Symbol = symbol; Price = 150.0 }
-    let loadData = Executor.fromFn "LoadData" loadDataFn
+    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 } |> toTask
+    let technicalAnalyst (data: StockData) = 
+        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> toTask
 
-    let technicalAnalystFn (data: StockData) = { Analyst = "Technical"; Rating = "Buy"; Score = 8 }
-    let technicalAnalyst = Executor.fromFn "TechnicalAnalyst" technicalAnalystFn
+    let fundamentalAnalyst (data: StockData) = 
+        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> toTask   
 
-    let fundamentalAnalystFn (data: StockData) = { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 }
-    let fundamentalAnalyst = Executor.fromFn "FundamentalAnalyst" fundamentalAnalystFn
+    let sentimentAnalyst (data: StockData) = 
+        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> toTask
 
-    let sentimentAnalystFn (data: StockData) = { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 }
-    let sentimentAnalyst = Executor.fromFn "SentimentAnalyst" sentimentAnalystFn
-
-    let summarize = Executor.fromFn "Summarize" (fun (reports: AnalystReport list) ->
+    let summarize (reports: AnalystReport list) = //Executor.fromFn "Summarize" (fun (reports: AnalystReport list) ->
         let avgScore = reports |> List.averageBy (fun r -> float r.Score)
         let consensus = if avgScore >= 7.0 then "Buy" else "Hold"
-        { Reports = reports; Consensus = consensus; AverageScore = avgScore })
+        { Reports = reports; Consensus = consensus; AverageScore = avgScore }
+        |> toTask
 
     let parallelWorkflow = workflow {
         start loadData
         fanOut [ s technicalAnalyst; s fundamentalAnalyst; s sentimentAnalyst ]
-        fanIn summarize
+        fanIn (summarize)
     }
 
     // Act
