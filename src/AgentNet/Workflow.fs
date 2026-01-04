@@ -345,7 +345,7 @@ type WorkflowBuilder() =
         let s5 : Step<'middle, 'o> = ((^E or StepConv) : (static member ToStep: StepConv * ^E -> Step<'middle, 'o>) (StepConv, x5))
         { Steps = state.Steps @ [WorkflowInternal.wrapStepParallel [s1; s2; s3; s4; s5]]; StepCount = state.StepCount + 1 }
 
-    /// Runs multiple steps in parallel (fan-out) - for 6+ branches, use 's' helper
+    /// Runs multiple steps in parallel (fan-out) - for 6+ branches, use '+' operator
     [<CustomOperation("fanOut")>]
     member _.FanOut(state: WorkflowState<'input, 'middle>, steps: Step<'middle, 'o> list) : WorkflowState<'input, 'o list> =
         { Steps = state.Steps @ [WorkflowInternal.wrapStepParallel steps]; StepCount = state.StepCount + 1 }
@@ -444,21 +444,11 @@ module WorkflowCE =
     /// Example: let parseFn (s: string) = s.Length |> toTask
     let toTask x = Task.FromResult x
 
-    /// Converts any supported type to Step<'i, 'o>.
+    /// Prefix operator to convert any supported type to Step<'i, 'o>.
     /// Supports: Task fn, Async fn, TypedAgent, Executor, or Step passthrough.
-    /// Primarily used for fanOut lists with 6+ branches: fanOut [step fn1; step fn2; ...]
-    let inline step (x: ^T) : Step<'i, 'o> =
+    /// Used for fanOut lists with 6+ branches: fanOut [+fn1; +fn2; +fn3; +fn4; +fn5; +fn6]
+    let inline (~+) (x: ^T) : Step<'i, 'o> =
         ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
-
-    /// Prefix operator shorthand for 'step'. Converts any supported type to Step<'i, 'o>.
-    /// Example: fanOut [+fn1; +fn2; +fn3; +fn4; +fn5; +fn6]
-    let inline (~+) (x: ^T) : Step<'i, 'o> = step x
-
-    /// Wraps a sync function ('i -> 'o) as TaskStep via Task.FromResult.
-    /// Use this to explicitly mark synchronous functions in workflows.
-    /// Example: workflow { start %parseFn; next %transformFn }
-    let inline (~%) (fn: 'i -> 'o) : Step<'i, 'o> =
-        TaskStep (fun x -> Task.FromResult(fn x))
 
 
 /// Functions for executing workflows

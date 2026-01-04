@@ -17,26 +17,26 @@ type DataPacket = { Id: int; Value: string }
 
 [<Test>]
 let ``FanOut executes all executors and FanIn aggregates results``() =
-    // Arrange
-    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 }
-    let technicalAnalyst (data: StockData) = 
-        { Analyst = "Technical"; Rating = "Buy"; Score = 8 }
+    // Arrange: All functions use toTask pattern
+    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 } |> toTask
+    let technicalAnalyst (data: StockData) =
+        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> toTask
 
-    let fundamentalAnalyst (data: StockData) = 
-        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 }
+    let fundamentalAnalyst (data: StockData) =
+        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> toTask
 
-    let sentimentAnalyst (data: StockData) = 
-        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 }
+    let sentimentAnalyst (data: StockData) =
+        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> toTask
 
     let summarize (reports: AnalystReport list) =
         let avgScore = reports |> List.averageBy (fun r -> float r.Score)
         let consensus = if avgScore >= 7.0 then "Buy" else "Hold"
-        { Reports = reports; Consensus = consensus; AverageScore = avgScore }
+        { Reports = reports; Consensus = consensus; AverageScore = avgScore } |> toTask
 
     let parallelWorkflow = workflow {
-        start %loadData
-        fanOut %technicalAnalyst %fundamentalAnalyst %sentimentAnalyst
-        fanIn %summarize
+        start loadData
+        fanOut technicalAnalyst fundamentalAnalyst sentimentAnalyst
+        fanIn summarize
     }
 
     // Act
@@ -196,28 +196,3 @@ let ``FanOut with list syntax, toTask and + operator for 6+ branches``() =
     // Assert
     result =! 81
 
-[<Test>]
-let ``FanOut with list syntax and percent operator for sync functions``() =
-    // Arrange: 6 sync function branches using % operator
-    let init (x: int) = x
-
-    let add1 (x: int) = x + 1
-    let add2 (x: int) = x + 2
-    let add3 (x: int) = x + 3
-    let add4 (x: int) = x + 4
-    let add5 (x: int) = x + 5
-    let add6 (x: int) = x + 6
-
-    let sum (nums: int list) = List.sum nums
-
-    let parallelWorkflow = workflow {
-        start %init
-        fanOut [%add1; %add2; %add3; %add4; %add5; %add6]
-        fanIn %sum
-    }
-
-    // Act: 10 -> fanOut: [11, 12, 13, 14, 15, 16] -> sum: 81
-    let result = Workflow.runSync 10 parallelWorkflow
-
-    // Assert
-    result =! 81

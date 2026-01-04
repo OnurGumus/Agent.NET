@@ -192,54 +192,16 @@ let ``Workflow with type transformations through pipeline``() =
     result.LongestToken =! "quick"  // or "brown" or "jumps" - all 5 chars, maxBy returns first
 
 [<Test>]
-let ``Sync functions work with percent operator``() =
-    // Arrange: All sync functions using % operator
-    let parse (s: string) = s.Length
-    let double (n: int) = n * 2
-    let format (n: int) = $"Result: {n}"
-
-    let syncWorkflow = workflow {
-        start %parse
-        next %double
-        next %format
-    }
-
-    // Act
-    let result = Workflow.runSync "hello" syncWorkflow
-
-    // Assert
-    result =! "Result: 10"
-
-[<Test>]
-let ``Mixed sync and async functions in workflow``() =
-    // Arrange: Mix of sync (%) and async functions
-    let parseSync (s: string) = s.Split(' ') |> Array.toList
-    let fetchAsync (words: string list) = task { return words.Length }
-    let formatSync (count: int) = $"Word count: {count}"
-
-    let mixedWorkflow = workflow {
-        start %parseSync
-        next fetchAsync
-        next %formatSync
-    }
-
-    // Act
-    let result = Workflow.runSync "one two three four" mixedWorkflow
-
-    // Assert
-    result =! "Word count: 4"
-
-[<Test>]
-let ``Sync functions work with toTask wrapper (no operator needed)``() =
-    // Arrange: Sync functions using |> toTask pattern - no operator at call site!
+let ``Sync functions work with toTask wrapper``() =
+    // Arrange: Sync functions using |> toTask pattern
     let parse (s: string) = s.Length |> toTask
     let double (n: int) = n * 2 |> toTask
     let format (n: int) = $"Result: {n}" |> toTask
 
     let syncWorkflow = workflow {
-        start parse      // No % needed!
-        next double      // No % needed!
-        next format      // No % needed!
+        start parse
+        next double
+        next format
     }
 
     // Act
