@@ -30,9 +30,9 @@ let getStockInfo (symbol: string) =
 let tool = Tool.createWithDocs <@ getStockInfo @>
 
 let agent =
-    Agent.create "You are a helpful stock assistant."
-    |> Agent.withTools [tool]
-    |> Agent.build chatClient
+    ChatAgent.create "You are a helpful stock assistant."
+    |> ChatAgent.withTools [tool]
+    |> ChatAgent.build chatClient
 ```
 
 That's it. The function name becomes the tool name. The XML docs become the description. The parameter names and types are extracted automatically. No attributes. No magic strings. No sync issues.
@@ -90,10 +90,10 @@ let timeTool =    Tool.createWithDocs <@ getTime @>
 
 ```fsharp
 let assistant =
-    Agent.create "You are a helpful assistant that provides weather and time information."
-    |> Agent.withName "WeatherBot"
-    |> Agent.withTools [weatherTool; timeTool]
-    |> Agent.build chatClient
+    ChatAgent.create "You are a helpful assistant that provides weather and time information."
+    |> ChatAgent.withName "WeatherBot"
+    |> ChatAgent.withTools [weatherTool; timeTool]
+    |> ChatAgent.build chatClient
 
 // Chat with your agent
 let! response = assistant.Chat("What's the weather like in Seattle?")
@@ -154,17 +154,17 @@ Build agents using a clean pipeline:
 
 ```fsharp
 let stockAdvisor =
-    Agent.create """
+    ChatAgent.create """
         You are a stock market analyst. You help users understand
         stock performance, analyze trends, and compare investments.
         Always provide balanced, factual analysis.
         """
-    |> Agent.withName "StockAdvisor"
-    |> Agent.withTool getStockInfoTool
-    |> Agent.withTool getHistoricalPricesTool
-    |> Agent.withTool calculateVolatilityTool
-    |> Agent.withTools [compareTool; analysisTool]  // Add multiple at once
-    |> Agent.build chatClient
+    |> ChatAgent.withName "StockAdvisor"
+    |> ChatAgent.withTool getStockInfoTool
+    |> ChatAgent.withTool getHistoricalPricesTool
+    |> ChatAgent.withTool calculateVolatilityTool
+    |> ChatAgent.withTools [compareTool; analysisTool]  // Add multiple at once
+    |> ChatAgent.build chatClient
 ```
 
 Use your agent:
@@ -419,7 +419,7 @@ let result = ResultWorkflow.runSync rawInput documentWorkflow
 **ResultExecutor helpers:**
 - `bind` - For functions returning `Result<'a, 'e>`
 - `map` - For functions returning `'a` (wrapped in `Ok` automatically)
-- `bindAsync` / `mapAsync` - Async versions
+- `bindTask` / `mapTask` / `bindAsync` / `mapAsync` - Async versions
 
 ---
 
@@ -432,7 +432,7 @@ let result = ResultWorkflow.runSync rawInput documentWorkflow
 | `ToolDef` | Tool definition with name, description, parameters, and MethodInfo |
 | `ParamInfo` | Parameter metadata: name, description, and type |
 | `AgentConfig` | Agent configuration: name, instructions, and tools |
-| `ChatAgent` | Built agent with `Chat: string -> Async<string>` |
+| `ChatAgent` | Built agent with `Chat: string -> Task<string>` |
 | `Executor<'i,'o>` | Workflow step that transforms input to output |
 | `WorkflowDef<'i,'o>` | Composable workflow definition |
 | `ResultExecutor<'i,'o,'e>` | Executor returning `Result<'o,'e>` |
@@ -449,11 +449,11 @@ Tool.describe: string -> ToolDef -> ToolDef
 ### Agent Functions
 
 ```fsharp
-Agent.create: string -> AgentConfig                           // Instructions
-Agent.withName: string -> AgentConfig -> AgentConfig
-Agent.withTool: ToolDef -> AgentConfig -> AgentConfig
-Agent.withTools: ToolDef list -> AgentConfig -> AgentConfig
-Agent.build: IChatClient -> AgentConfig -> ChatAgent
+ChatAgent.create: string -> AgentConfig                           // Instructions
+ChatAgent.withName: string -> AgentConfig -> AgentConfig
+ChatAgent.withTool: ToolDef -> AgentConfig -> AgentConfig
+ChatAgent.withTools: ToolDef list -> AgentConfig -> AgentConfig
+ChatAgent.build: IChatClient -> AgentConfig -> ChatAgent
 ```
 
 ### Workflow CE Keywords
@@ -473,7 +473,7 @@ Agent.build: IChatClient -> AgentConfig -> ChatAgent
 ### Workflow Functions
 
 ```fsharp
-Workflow.run: 'i -> WorkflowDef<'i,'o> -> Async<'o>
+Workflow.run: 'i -> WorkflowDef<'i,'o> -> Task<'o>
 Workflow.runSync: 'i -> WorkflowDef<'i,'o> -> 'o
 Workflow.toExecutor: WorkflowDef<'i,'o> -> Executor<'i,'o>
 ```
