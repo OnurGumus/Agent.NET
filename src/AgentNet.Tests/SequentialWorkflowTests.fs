@@ -22,7 +22,7 @@ let ``Simple sequential workflow executes in order``() =
             Sources = ["Source A"; "Source B"]
             RawFindings = $"Findings about {topic.Name}"
         }
-        |> toTask
+        |> toSync
 
     let analyzer (research: ResearchData) = 
         {
@@ -30,7 +30,7 @@ let ``Simple sequential workflow executes in order``() =
             Insights = [$"Insight from {research.Sources.Length} sources"]
             Confidence = 0.85
         }
-        |> toTask
+        |> toSync
 
     let writer (analysis: AnalysisResult) =
         {
@@ -38,7 +38,7 @@ let ``Simple sequential workflow executes in order``() =
             Title = $"Report: {analysis.Research.Topic.Name}"
             Summary = $"Based on {analysis.Insights.Length} insights with {analysis.Confidence} confidence"
         }
-        |> toTask
+        |> toSync
 
     // Build the workflow using the DSL
     let myWorkflow = workflow {
@@ -228,3 +228,41 @@ let ``Mixed sync and async functions in workflow``() =
 
     // Assert
     result =! "Word count: 4"
+
+[<Test>]
+let ``Sync functions work with toSync wrapper (no operator needed)``() =
+    // Arrange: Sync functions using |> toSync pattern - no operator at call site!
+    let parse (s: string) = s.Length |> toSync
+    let double (n: int) = n * 2 |> toSync
+    let format (n: int) = $"Result: {n}" |> toSync
+
+    let syncWorkflow = workflow {
+        start parse      // No % needed!
+        next double      // No % needed!
+        next format      // No % needed!
+    }
+
+    // Act
+    let result = Workflow.runSync "hello" syncWorkflow
+
+    // Assert
+    result =! "Result: 10"
+
+[<Test>]
+let ``Mixed toSync and async functions in workflow``() =
+    // Arrange: Mix of toSync pattern and async functions
+    let parseSync (s: string) = s.Split(' ') |> Array.toList |> toSync
+    let fetchAsync (words: string list) = task { return words.Length }
+    let formatSync (count: int) = $"Word count: {count}" |> toSync
+
+    let mixedWorkflow = workflow {
+        start parseSync     // Uses toSync - no operator
+        next fetchAsync     // Async - no operator
+        next formatSync     // Uses toSync - no operator
+    }
+
+    // Act
+    let result = Workflow.runSync "one two three four five" mixedWorkflow
+
+    // Assert
+    result =! "Word count: 5"

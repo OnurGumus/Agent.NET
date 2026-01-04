@@ -78,6 +78,12 @@ module Executor =
         }
 
 
+/// Wrapper type for sync function results. Allows the type system to distinguish
+/// sync functions from async functions without requiring operators at the call site.
+/// Use with |> toSync at the end of a sync function body.
+type Sync<'a> = Sync of 'a
+
+
 /// A workflow step type that unifies Task functions, Async functions, sync functions, TypedAgents, and Executors.
 /// This enables clean workflow syntax and mixed-type fanOut operations.
 type Step<'i, 'o> =
@@ -93,6 +99,7 @@ type Step<'i, 'o> =
 type StepConv = StepConv with
     static member inline ToStep(_: StepConv, fn: 'i -> Task<'o>) : Step<'i, 'o> = TaskStep fn
     static member inline ToStep(_: StepConv, fn: 'i -> Async<'o>) : Step<'i, 'o> = AsyncStep fn
+    static member inline ToStep(_: StepConv, fn: 'i -> Sync<'o>) : Step<'i, 'o> = SyncStep (fn >> fun (Sync x) -> x)
     static member inline ToStep(_: StepConv, agent: TypedAgent<'i, 'o>) : Step<'i, 'o> = AgentStep agent
     static member inline ToStep(_: StepConv, exec: Executor<'i, 'o>) : Step<'i, 'o> = ExecutorStep exec
     static member inline ToStep(_: StepConv, step: Step<'i, 'o>) : Step<'i, 'o> = step  // Passthrough
@@ -441,8 +448,10 @@ type WorkflowBuilder() =
 module WorkflowCE =
     let workflow = WorkflowBuilder()
 
-    /// Alias for Task.FromResult - lifts sync values to Task for workflow compatibility
-    let toTask = Task.FromResult
+    /// Wraps a sync result in Sync<'a>. Use at the end of sync function bodies.
+    /// This allows sync functions to work in workflows without operators at the call site.
+    /// Example: let parseFn (s: string) = s.Length |> toSync
+    let toSync x = Sync x
 
     /// Converts any supported type to Step<'i, 'o>.
     /// Supports: Task fn, Async fn, TypedAgent, Executor, or Step passthrough.

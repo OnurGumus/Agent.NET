@@ -18,26 +18,25 @@ type DataPacket = { Id: int; Value: string }
 [<Test>]
 let ``FanOut executes all executors and FanIn aggregates results``() =
     // Arrange
-    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 } |> toTask
+    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 }
     let technicalAnalyst (data: StockData) = 
-        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> toTask
+        { Analyst = "Technical"; Rating = "Buy"; Score = 8 }
 
     let fundamentalAnalyst (data: StockData) = 
-        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> toTask   
+        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 }
 
     let sentimentAnalyst (data: StockData) = 
-        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> toTask
+        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 }
 
-    let summarize (reports: AnalystReport list) = //Executor.fromFn "Summarize" (fun (reports: AnalystReport list) ->
+    let summarize (reports: AnalystReport list) =
         let avgScore = reports |> List.averageBy (fun r -> float r.Score)
         let consensus = if avgScore >= 7.0 then "Buy" else "Hold"
         { Reports = reports; Consensus = consensus; AverageScore = avgScore }
-        |> toTask
 
     let parallelWorkflow = workflow {
-        start loadData
-        fanOut technicalAnalyst fundamentalAnalyst sentimentAnalyst
-        fanIn summarize
+        start %loadData
+        fanOut %technicalAnalyst %fundamentalAnalyst %sentimentAnalyst
+        fanIn %summarize
     }
 
     // Act
