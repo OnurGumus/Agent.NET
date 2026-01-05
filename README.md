@@ -70,7 +70,7 @@ All with clean F# syntax - no attributes, no magic strings, no ceremony.
 ## Installation
 
 ```bash
-dotnet add package Agent.NET
+dotnet add package AgentNet
 ```
 
 ---
