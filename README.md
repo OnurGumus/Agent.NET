@@ -580,6 +580,57 @@ See the [StockAdvisorFS](./src/StockAdvisorFS) sample project for a complete exa
 
 ---
 
+## Agent.NET vs. MAF Durable Workflows
+
+Agent.NET's `workflow` CE may resemble MAF's WorkflowBuilder, but they solve fundamentally different problems.
+
+### Agent.NET Workflows
+
+Designed for **in-memory, local-first orchestration**:
+
+- **Strong typing** - Each step is a normal F# function, agent, or executor with enforced `'input -> 'output` type transitions
+- **Composable** - Workflows can be built, nested, or generated at runtime
+- **Lightweight** - No durable runtime or replay engine; ideal for agent pipelines and interactive LLM workflows
+
+### MAF Durable Workflows
+
+Designed for **durable, distributed orchestration** (backed by Azure Durable Functions):
+
+- **Checkpointing & replay** - Fault tolerance across failures
+- **Serializable graphs** - Workflows persist state and resume automatically
+- **Cloud-native** - Built for long-running, enterprise-scale orchestrations
+
+### Comparison
+
+| Scenario | Agent.NET | MAF Durable |
+|----------|:---------:|:-----------:|
+| Typed, expressive agent pipelines | ✔️ | |
+| Local-first orchestration | ✔️ | |
+| Dynamic, runtime-generated workflows | ✔️ | |
+| Durable, long-running processes | | ✔️ |
+| Cloud-native distributed orchestration | | ✔️ |
+| Bring-your-own persistence | ✔️ | ✔️ |
+
+### Enterprise Use Cases
+
+Agent.NET workflows run to completion in-memory, but can participate in enterprise scenarios using a **bring-your-own persistence** model:
+
+- **Segment long-running processes** - Design separate workflows for each segment (e.g., before/after a human approval step), persisting intermediate results between them
+- **Coordinate with durable systems** - Use MAF, Akka.NET, Dapr, Orleans, or Service Bus as the outer orchestrator, with Agent.NET handling typed, local pipeline segments
+- **Embed in larger architectures** - Agent.NET workflows make excellent building blocks within event-driven or queue-based systems
+
+Agent.NET intentionally avoids prescribing a durability model, giving you full control over persistence and orchestration boundaries.
+
+### Choosing the Right Tool
+
+**Use Agent.NET when you want:** expressive type-safe pipelines, local-first orchestration, dynamic or runtime-generated workflows.
+
+**Use MAF when you need:** durable long-running processes, cloud-native resilience and replay, built-in fault tolerance.
+
+Both tools excel in their respective domains and can be combined when needed.
+
+---
+
 ## Design Philosophy
 
 1. **Quotations for tools** - Automatic metadata extraction, no sync issues
