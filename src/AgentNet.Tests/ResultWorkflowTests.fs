@@ -278,3 +278,211 @@ let ``Result workflow can be composed using toExecutor``() =
     | Error _ ->
         Assert.Fail "Expected Ok result"
 
+// =============================================================================
+// SRTP-based tests (new syntax without explicit ResultExecutor wrappers)
+// =============================================================================
+
+[<Test>]
+let ``SRTP: Result workflow with direct Task<Result> functions``() =
+    // Arrange - direct functions, no ResultExecutor wrapper needed
+    let validate (input: string) : Task<Result<Document, ProcessingError>> = task {
+        if input.Length > 0 
+        then return Ok { Id = "doc-1"; Content = input }
+        else return Error (ParseError "Empty input")
+    }
+
+    let processDoc (doc: Document) : Task<Result<ValidatedDoc, ProcessingError>> = task {
+        return Ok { Doc = doc; IsValid = true; Errors = [] }
+    }
+
+    let resultWf = resultWorkflow {
+        step "Validate" validate
+        step "ProcessDoc" processDoc
+    }
+
+    // Act
+    let result = ResultWorkflow.runSync "Hello world" resultWf
+
+    // Assert
+    match result with
+    | Ok validated -> validated.IsValid =! true
+    | Error _ -> Assert.Fail "Expected Ok result"
+
+[<Test>]
+let ``SRTP: Result workflow short-circuits on error``() =
+    // Arrange
+    let mutable step2Called = false
+
+    let step1 (input: string) : Task<Result<Document, ProcessingError>> = task {
+        return Error (ParseError "Intentional failure")
+    }
+
+    let step2 (doc: Document) : Task<Result<ValidatedDoc, ProcessingError>> = task {
+        step2Called <- true
+        return Ok { Doc = doc; IsValid = true; Errors = [] }
+    }
+
+    let resultWf = resultWorkflow {
+        step step1
+        step step2
+    }
+
+    // Act
+    let result = ResultWorkflow.runSync "test" resultWf
+
+    // Assert
+    step2Called =! false  // Should NOT be called due to short-circuit
+    match result with
+    | Error (ParseError _) -> ()
+    | _ -> Assert.Fail "Expected ParseError"
+
+[<Test>]
+let ``SRTP: Result workflow with Async<Result> functions``() =
+    // Arrange
+    let validateAsync (input: string) : Async<Result<Document, ProcessingError>> = async {
+        if input.Length > 3 then
+            return Ok { Id = "async-doc"; Content = input }
+        else
+            return Error (ValidationError ("input", "Too short"))
+    }
+
+    let resultWf = resultWorkflow {
+        step validateAsync
+    }
+
+    // Act
+    let successResult = ResultWorkflow.runSync "Hello" resultWf
+    let failResult = ResultWorkflow.runSync "Hi" resultWf
+
+    // Assert
+    match successResult with
+    | Ok doc -> doc.Id =! "async-doc"
+    | Error _ -> Assert.Fail "Expected Ok"
+
+    match failResult with
+    | Error (ValidationError _) -> ()
+    | _ -> Assert.Fail "Expected ValidationError"
+
+[<Test>]
+let ``SRTP: ok wrapper for map semantics with Task functions``() =
+    // Arrange - non-Result-returning functions wrapped with 'ok'
+    let fetchData (id: string) = 
+        if id = "doc-123"
+        then Ok { Id = id; Content = $"Content for {id}" }
+        else Error (ParseError "Not found")
+        |> Task.FromResult
+
+    let transform (doc: Document) : Task<ValidatedDoc> = 
+        { Doc = doc; IsValid = true; Errors = [] } |> Task.FromResult    
+
+    let resultWf = resultWorkflow {
+        step fetchData      // Task<string> -> Task<Result<Document, 'e>>
+        step (ok transform) // Task<Document> -> Task<Result<ValidatedDoc, 'e>>
+    }
+
+    // Act
+    let result: Result<ValidatedDoc, ProcessingError> = ResultWorkflow.runSync "doc-123" resultWf
+
+    // Assert
+    match result with
+    | Ok validated ->
+        validated.Doc.Id =! "doc-123"
+        validated.IsValid =! true
+    | Error _ -> Assert.Fail "Expected Ok result"
+
+// Same as above test but with Error condition
+[<Test>]
+let ``SRTP: ok wrapper for map semantics with Task functions - Error case``() =
+    // Arrange - non-Result-returning functions wrapped with 'ok'
+    let fetchData (id: string) = 
+        if id = "doc-123"
+        then Ok { Id = id; Content = $"Content for {id}" }
+        else Error (ParseError "Not found")
+        |> Task.FromResult
+    let transform (doc: Document) : Task<ValidatedDoc> = 
+        { Doc = doc; IsValid = true; Errors = [] } |> Task.FromResult    
+    let resultWf = resultWorkflow {
+        step fetchData      // Task<string> -> Task<Result<Document, 'e>>
+        step (ok transform) // Task<Document> -> Task<Result<ValidatedDoc, 'e>>
+    }
+    // Act
+    let result: Result<ValidatedDoc, ProcessingError> = ResultWorkflow.runSync "unknown-doc" resultWf
+    // Assert
+    match result with
+    | Error (ParseError msg) -> 
+        msg =! "Not found"
+    | _ -> 
+        Assert.Fail "Expected ParseError"
+
+[<Test>]
+let ``SRTP: ok wrapper for map semantics with Async functions``() =
+    // Arrange - Async functions wrapped with 'ok'
+    let fetchAsync (id: string) : Async<Document> = async {
+        return { Id = id; Content = $"Async content for {id}" }
+    }
+
+    let resultWf = resultWorkflow {
+        step (ok fetchAsync)
+    }
+
+    // Act
+    let result: Result<Document, ProcessingError> = ResultWorkflow.runSync "async-doc" resultWf
+
+    // Assert
+    match result with
+    | Ok doc ->
+        doc.Id =! "async-doc"
+        doc.Content =! "Async content for async-doc"
+    | Error _ -> Assert.Fail "Expected Ok result"
+
+[<Test>]
+let ``SRTP: Mixed types in result workflow``() =
+    // Arrange - mix of Task<Result>, Async<Result>, and ResultExecutor
+    let taskStep (input: string) : Task<Result<Document, ProcessingError>> = task {
+        return Ok { Id = "1"; Content = input }
+    }
+
+    let executorStep = ResultExecutor.bind "Validate" (fun (doc: Document) ->
+        if doc.Content.Length > 0 then Ok { Doc = doc; IsValid = true; Errors = [] }
+        else Error (ValidationError ("content", "Empty")))
+
+    let asyncStep (validated: ValidatedDoc) : Async<Result<ProcessedDoc, ProcessingError>> = async {
+        return Ok { Doc = validated; WordCount = 5; Summary = "Done" }
+    }
+
+    let resultWf = resultWorkflow {
+        step taskStep           // Task<Result>
+        step executorStep       // ResultExecutor (backwards compat)
+        step asyncStep          // Async<Result>
+    }
+
+    // Act
+    let result = ResultWorkflow.runSync "test input" resultWf
+
+    // Assert
+    match result with
+    | Ok processed -> processed.Summary =! "Done"
+    | Error _ -> Assert.Fail "Expected Ok"
+
+[<Test>]
+let ``Backwards compat: Existing ResultExecutor syntax still works``() =
+    // Arrange - existing API should continue to work
+    let parse = ResultExecutor.map "Parse" (fun (raw: string) ->
+        { Id = "doc-1"; Content = raw })
+
+    let validate = ResultExecutor.bind "Validate" (fun (doc: Document) ->
+        Ok { Doc = doc; IsValid = true; Errors = [] })
+
+    let resultWf = resultWorkflow {
+        step parse
+        step validate
+    }
+
+    // Act
+    let result = ResultWorkflow.runSync "test" resultWf
+
+    // Assert
+    match result with
+    | Ok validated -> validated.IsValid =! true
+    | Error _ -> Assert.Fail "Expected Ok"
+

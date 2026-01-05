@@ -467,27 +467,37 @@ var result = await combinedPolicy.ExecuteAsync(async () =>
 For workflows where any step can fail, use `resultWorkflow` for automatic short-circuit handling of errors:
 
 ```fsharp
+// Model custom error types for your workflow (or use a simple string error).
 type ValidationError =
     | ParseError of string
     | ValidationFailed of string
     | SaveError of string
 
+// Functions that return Task<Result<...>> work directly (bind semantics)
+let parseDocument (raw: string) : Task<Result<Document, ValidationError>> = task { ... }
+let validateSchema (doc: Document) : Task<Result<ValidatedDoc, ValidationError>> = task { ... }
+let addMetadata (doc: ValidatedDoc) : Task<Result<EnrichedDoc, ValidationError>> = task { ... }
+
+// Functions that DON'T return Result use 'ok' wrapper (map semantics)
+let saveToDatabase (doc: EnrichedDoc) : Task<SavedDoc> = task { ... }
+
 let documentWorkflow = resultWorkflow {
-    step (ResultExecutor.bind "Parse" parseDocument)
-    step (ResultExecutor.bind "Validate" validateSchema)
-    step (ResultExecutor.bind "Enrich" addMetadata)
-    step (ResultExecutor.map "Save" saveToDatabase)
+    step parseDocument       // Task<Result<...>> - auto bind semantics
+    step validateSchema      // Task<Result<...>> - auto bind semantics
+    step addMetadata         // Task<Result<...>> - auto bind semantics
+    step (ok saveToDatabase) // Task<...> - wrapped in Ok via 'ok' wrapper
 }
 
 let result = ResultWorkflow.runSync rawInput documentWorkflow
-// Returns: Result<Document, ValidationError>
+// Returns: Result<SavedDoc, ValidationError>
 // Short-circuits on first Error, no manual error checking needed!
 ```
 
-**ResultExecutor helpers:**
-- `bind` - For functions returning `Result<'a, 'e>`
-- `map` - For functions returning `'a` (wrapped in `Ok` automatically)
-- `bindTask` / `mapTask` / `bindAsync` / `mapAsync` - Async versions
+**Step types:**
+- Functions returning `Task<Result<'o, 'e>>` or `Async<Result<'o, 'e>>` - auto bind semantics
+- Functions returning `Task<'o>` or `Async<'o>` - use `ok` wrapper for map semantics
+- `ResultExecutor<'i, 'o, 'e>` - direct passthrough (for explicit naming or backwards compatibility)
+- `TypedAgent<'i, 'o>` - auto wrapped in Ok
 
 ---
 
