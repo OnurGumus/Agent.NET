@@ -5,8 +5,8 @@ open Swensen.Unquote
 open AgentNet
 
 // Test functions without XML docs
-let greet (name: string) : string =
-    $"Hello, {name}!"
+let greet (name: string) =
+    $"Hello, {name}!" |> Task.fromResult
 
 let add (x: int) (y: int) : int =
     x + y
