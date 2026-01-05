@@ -286,35 +286,33 @@ type WorkflowBuilder() =
 
     member _.Yield(_) : WorkflowState<'a, 'a> = { Steps = []; StepCount = 0 }
 
-    // ============ START OPERATIONS ============
-    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
+    // ============ STEP OPERATIONS ============
+    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, Workflow, or Step directly
+    // Two overloads: one for first step (establishes types), one for subsequent (threads input type)
 
-    /// Starts workflow with any supported step type (uses SRTP for type resolution)
-    [<CustomOperation("start")>]
-    member inline _.Start(state: WorkflowState<_, _>, x: ^T) : WorkflowState<'i, 'o> =
+    /// Adds first step - establishes workflow input/output types (uses SRTP for type resolution)
+    [<CustomOperation("step")>]
+    member inline _.StepFirst(state: WorkflowState<_, _>, x: ^T) : WorkflowState<'i, 'o> =
         let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
         let name = $"Step {state.StepCount + 1}"
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Starts workflow with a named step
-    [<CustomOperation("start")>]
-    member inline _.Start(state: WorkflowState<_, _>, name: string, x: ^T) : WorkflowState<'i, 'o> =
+    /// Adds first step with name - establishes workflow input/output types
+    [<CustomOperation("step")>]
+    member inline _.StepFirst(state: WorkflowState<_, _>, name: string, x: ^T) : WorkflowState<'i, 'o> =
         let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    // ============ NEXT OPERATIONS ============
-    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
-
-    /// Adds any supported step type as next step (uses SRTP for type resolution)
-    [<CustomOperation("next")>]
-    member inline _.Next(state: WorkflowState<'input, 'middle>, x: ^T) : WorkflowState<'input, 'output> =
+    /// Adds subsequent step - threads input type through (uses SRTP for type resolution)
+    [<CustomOperation("step")>]
+    member inline _.Step(state: WorkflowState<'input, 'middle>, x: ^T) : WorkflowState<'input, 'output> =
         let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
         let name = $"Step {state.StepCount + 1}"
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Adds a named step as next step
-    [<CustomOperation("next")>]
-    member inline _.Next(state: WorkflowState<'input, 'middle>, name: string, x: ^T) : WorkflowState<'input, 'output> =
+    /// Adds subsequent step with name - threads input type through
+    [<CustomOperation("step")>]
+    member inline _.Step(state: WorkflowState<'input, 'middle>, name: string, x: ^T) : WorkflowState<'input, 'output> =
         let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 

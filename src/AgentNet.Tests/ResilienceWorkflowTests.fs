@@ -24,7 +24,7 @@ let ``Retry executes step multiple times on failure then succeeds``() =
     })
 
     let resilienceWorkflow = workflow {
-        start flaky
+        step flaky
         retry 3
     }
 
@@ -46,7 +46,7 @@ let ``Retry stops immediately on success``() =
     })
 
     let resilienceWorkflow = workflow {
-        start reliable
+        step reliable
         retry 5
     }
 
@@ -64,7 +64,7 @@ let ``Retry with zero retries fails immediately``() =
     })
 
     let resilienceWorkflow = workflow {
-        start alwaysFails
+        step alwaysFails
         retry 0
     }
 
@@ -86,7 +86,7 @@ let ``Fallback executes when all retries exhausted``() =
         { Id = input; Status = "Fallback"; Attempts = 0 })
 
     let resilienceWorkflow = workflow {
-        start unreliable
+        step unreliable
         retry 2
         fallback fallbackExecutor
     }
@@ -112,7 +112,7 @@ let ``Fallback not used when primary succeeds``() =
     })
 
     let resilienceWorkflow = workflow {
-        start reliable
+        step reliable
         retry 2
         fallback fallbackExecutor
     }
@@ -133,7 +133,7 @@ let ``Timeout fails when step exceeds duration``() =
     })
 
     let resilienceWorkflow = workflow {
-        start slow
+        step slow
         timeout (TimeSpan.FromMilliseconds 100.)  // Only allow 100ms
     }
 
@@ -150,7 +150,7 @@ let ``Timeout succeeds when step completes in time``() =
     })
 
     let resilienceWorkflow = workflow {
-        start fast
+        step fast
         timeout (TimeSpan.FromMilliseconds 500.)  // Allow 500ms
     }
 
@@ -175,7 +175,7 @@ let ``Backoff Immediate has no delay between retries``() =
     })
 
     let resilienceWorkflow = workflow {
-        start flaky
+        step flaky
         retry 3
         backoff Immediate
     }
@@ -205,9 +205,9 @@ let ``Resilience modifiers apply to previous step``() =
     })
 
     let resilienceWorkflow = workflow {
-        start flakyStep1
+        step flakyStep1
         retry 2
-        next step2
+        step step2
     }
 
     // Act

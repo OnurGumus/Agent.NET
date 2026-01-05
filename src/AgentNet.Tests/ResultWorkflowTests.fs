@@ -33,9 +33,9 @@ let ``Result workflow succeeds when all steps return Ok``() =
         { Doc = validated; WordCount = words; Summary = $"Document with {words} words" })
 
     let resultWf = resultWorkflow {
-        start parse
-        next validate
-        next processDoc
+        step parse
+        step validate
+        step processDoc
     }
 
     // Act
@@ -70,9 +70,9 @@ let ``Result workflow short-circuits on first Error``() =
         Ok { Doc = { Doc = doc; IsValid = true; Errors = [] }; WordCount = 0; Summary = "" })
 
     let resultWf = resultWorkflow {
-        start step1
-        next step2
-        next step3
+        step step1
+        step step2
+        step step3
     }
 
     // Act
@@ -96,7 +96,7 @@ let ``ResultExecutor.map wraps return value in Ok``() =
     let doubler = ResultExecutor.map "Doubler" (fun (x: int) -> x * 2)
 
     let resultWf = resultWorkflow {
-        start doubler
+        step doubler
     }
 
     // Act
@@ -112,8 +112,8 @@ let ``ResultExecutor.bind passes Result through unchanged``() =
         if x > 0 then Ok $"Valid: {x}"
         else Error (ParseError "Value must be positive"))
 
-    let positiveWf = resultWorkflow { start validator }
-    let negativeWf = resultWorkflow { start validator }
+    let positiveWf = resultWorkflow { step validator }
+    let negativeWf = resultWorkflow { step validator }
 
     // Act & Assert: Positive case
     let positiveResult = ResultWorkflow.runSync 10 positiveWf
@@ -136,7 +136,7 @@ let ``ResultExecutor.mapTask wraps task result in Ok``() =
     })
 
     let resultWf = resultWorkflow {
-        start taskFetcher
+        step taskFetcher
     }
 
     // Act
@@ -161,8 +161,8 @@ let ``ResultExecutor.bindTask passes task Result through``() =
             return Error (ValidationError ("content", "Content too short"))
     })
 
-    let longDocWf = resultWorkflow { start taskValidator }
-    let shortDocWf = resultWorkflow { start taskValidator }
+    let longDocWf = resultWorkflow { step taskValidator }
+    let shortDocWf = resultWorkflow { step taskValidator }
 
     // Act & Assert: Long content passes
     let longResult = ResultWorkflow.runSync { Id = "1"; Content = "This is long enough" } longDocWf
@@ -193,9 +193,9 @@ let ``Result workflow with multiple error types in chain``() =
         else Error (SaveError 500))
 
     let resultWf = resultWorkflow {
-        start parse
-        next validate
-        next save
+        step parse
+        step validate
+        step save
     }
 
     // Act & Assert: ParseError case
@@ -225,9 +225,9 @@ let ``Result workflow output type is correctly inferred``() =
         { Id = "result"; Content = if b then "Long" else "Short" })
 
     let resultWf = resultWorkflow {
-        start stringToInt
-        next intToBool
-        next boolToDoc
+        step stringToInt
+        step intToBool
+        step boolToDoc
     }
 
     // Act: Type inference should work - resultWf : ResultWorkflowDef<string, Document, 'error>
@@ -251,8 +251,8 @@ let ``Result workflow can be composed using toExecutor``() =
         { Doc = doc; IsValid = true; Errors = [] })
 
     let innerWorkflow = resultWorkflow {
-        start innerParse
-        next innerValidate
+        step innerParse
+        step innerValidate
     }
 
     // Convert inner workflow to an executor
@@ -263,8 +263,8 @@ let ``Result workflow can be composed using toExecutor``() =
         { Doc = validated; WordCount = validated.Doc.Content.Split(' ').Length; Summary = "Processed" })
 
     let outerWorkflow = resultWorkflow {
-        start innerAsExecutor
-        next processStep
+        step innerAsExecutor
+        step processStep
     }
 
     // Act

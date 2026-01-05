@@ -29,8 +29,8 @@ let ``Nested workflow executes as single step``() =
         { research with Findings = research.Findings @ ["Additional insight"] })
 
     let innerWorkflow = workflow {
-        start gatherFacts
-        next expandFindings
+        step gatherFacts
+        step expandFindings
     }
 
     // Convert to executor
@@ -41,8 +41,8 @@ let ``Nested workflow executes as single step``() =
         { Research = research; Conclusion = "Positive outlook"; Confidence = 0.85 })
 
     let outerWorkflow = workflow {
-        start researchExecutor
-        next analyze
+        step researchExecutor
+        step analyze
     }
 
     // Act
@@ -73,7 +73,7 @@ let ``Data flows correctly through nested workflow``() =
         output)
 
     let innerWorkflow = workflow {
-        start innerTransform
+        step innerTransform
     }
 
     let innerAsStep = Workflow.toExecutor "InnerWorkflow" innerWorkflow
@@ -83,9 +83,9 @@ let ``Data flows correctly through nested workflow``() =
         input + "-step2")
 
     let composedWorkflow = workflow {
-        start step1
-        next innerAsStep
-        next step2
+        step step1
+        step innerAsStep
+        step step2
     }
 
     // Act
@@ -103,16 +103,16 @@ let ``Multiple levels of nesting work correctly``() =
     // Arrange: Create a deeply nested workflow structure
     // Level 3 (innermost)
     let level3Step = Executor.fromFn "Level3" (fun (x: int) -> x * 2)
-    let level3Workflow = workflow { start level3Step }
+    let level3Workflow = workflow { step level3Step }
     let level3Executor = Workflow.toExecutor "Level3Workflow" level3Workflow
 
     // Level 2 (wraps level 3)
     let level2Pre = Executor.fromFn "Level2Pre" (fun (x: int) -> x + 1)
     let level2Post = Executor.fromFn "Level2Post" (fun (x: int) -> x + 10)
     let level2Workflow = workflow {
-        start level2Pre
-        next level3Executor
-        next level2Post
+        step level2Pre
+        step level3Executor
+        step level2Post
     }
     let level2Executor = Workflow.toExecutor "Level2Workflow" level2Workflow
 
@@ -120,9 +120,9 @@ let ``Multiple levels of nesting work correctly``() =
     let level1Pre = Executor.fromFn "Level1Pre" (fun (x: int) -> x * 3)
     let level1Post = Executor.fromFn "Level1Post" (fun (x: int) -> x - 5)
     let level1Workflow = workflow {
-        start level1Pre
-        next level2Executor
-        next level1Post
+        step level1Pre
+        step level2Executor
+        step level1Post
     }
 
     // Act: Input 5
@@ -150,8 +150,8 @@ let ``Nested workflow with custom domain types``() =
         { cleaned with Cleaned = cleaned.Cleaned |> List.filter (fun v -> v < 50) })
 
     let cleaningWorkflow = workflow {
-        start removeNegatives
-        next removeOutliers
+        step removeNegatives
+        step removeOutliers
     }
     let cleaningExecutor = Workflow.toExecutor "CleaningWorkflow" cleaningWorkflow
 
@@ -166,9 +166,9 @@ let ``Nested workflow with custom domain types``() =
         })
 
     let fullPipeline = workflow {
-        start loadData
-        next cleaningExecutor
-        next computeStats
+        step loadData
+        step cleaningExecutor
+        step computeStats
     }
 
     // Act
@@ -185,28 +185,28 @@ let ``Nested workflow can be reused in multiple outer workflows``() =
     // Arrange: Create a reusable inner workflow
     let formatNumber = Executor.fromFn "FormatNumber" (fun (n: int) -> $"[{n}]")
 
-    let formatWorkflow = workflow { start formatNumber }
+    let formatWorkflow = workflow { step formatNumber }
     let formatExecutor = Workflow.toExecutor "FormatWorkflow" formatWorkflow
 
     // First outer workflow: adds prefix
     let addPrefix = Executor.fromFn "AddPrefix" (fun (s: string) -> "PREFIX:" + s)
     let withPrefix = workflow {
-        start formatExecutor
-        next addPrefix
+        step formatExecutor
+        step addPrefix
     }
 
     // Second outer workflow: adds suffix
     let addSuffix = Executor.fromFn "AddSuffix" (fun (s: string) -> s + ":SUFFIX")
     let withSuffix = workflow {
-        start formatExecutor
-        next addSuffix
+        step formatExecutor
+        step addSuffix
     }
 
     // Third outer workflow: uppercase
     let toUpper = Executor.fromFn "ToUpper" (fun (s: string) -> s.ToUpper())
     let withUpper = workflow {
-        start formatExecutor
-        next toUpper
+        step formatExecutor
+        step toUpper
     }
 
     // Act
@@ -231,7 +231,7 @@ let ``Nested workflow with parallel fanOut inside``() =
         results |> List.sum)
 
     let parallelInnerWorkflow = workflow {
-        start prepare
+        step prepare
         fanOut branch1 branch2
         fanIn combine
     }
@@ -242,9 +242,9 @@ let ``Nested workflow with parallel fanOut inside``() =
     let format = Executor.fromFn "Format" (fun (x: int) -> $"Result: {x}")
 
     let outerWorkflow = workflow {
-        start double
-        next parallelExecutor
-        next format
+        step double
+        step parallelExecutor
+        step format
     }
 
     // Act: Input 5
@@ -263,7 +263,7 @@ let ``Full report generation pipeline with composition``() =
     let researchTopic = Executor.fromFn "ResearchTopic" (fun (topic: string) ->
         { Topic = topic; Findings = [$"Key finding about {topic}"; "Supporting data"] })
 
-    let researchWorkflow = workflow { start researchTopic }
+    let researchWorkflow = workflow { step researchTopic }
     let researchExecutor = Workflow.toExecutor "ResearchWorkflow" researchWorkflow
 
     // Analysis workflow
@@ -275,8 +275,8 @@ let ``Full report generation pipeline with composition``() =
         })
 
     let analysisWorkflow = workflow {
-        start researchExecutor
-        next analyzeResearch
+        step researchExecutor
+        step analyzeResearch
     }
     let analysisExecutor = Workflow.toExecutor "AnalysisWorkflow" analysisWorkflow
 
@@ -289,8 +289,8 @@ let ``Full report generation pipeline with composition``() =
         })
 
     let reportWorkflow = workflow {
-        start analysisExecutor
-        next generateReport
+        step analysisExecutor
+        step generateReport
     }
 
     // Act
@@ -306,14 +306,14 @@ let ``Full report generation pipeline with composition``() =
 let ``Workflow can be passed directly without toExecutor``() =
     // Arrange: Inner workflow that doubles
     let inner = workflow {
-        start (fun (x: int) -> x * 2 |> Task.fromResult)
+        step (fun (x: int) -> x * 2 |> Task.fromResult)
     }
 
     // Outer workflow that uses inner directly (no Workflow.toExecutor needed!)
     let outer = workflow {
-        start (fun (x: int) -> x + 1 |> Task.fromResult)
-        next inner
-        next (fun (x: int) -> x.ToString() |> Task.fromResult)
+        step (fun (x: int) -> x + 1 |> Task.fromResult)
+        step inner
+        step (fun (x: int) -> x.ToString() |> Task.fromResult)
     }
 
     // Act: 5 -> +1 -> 6 -> *2 -> 12 -> "12"
@@ -326,18 +326,18 @@ let ``Workflow can be passed directly without toExecutor``() =
 let ``Multiple nested workflows can be chained directly``() =
     // Arrange: Create two inner workflows
     let addTen = workflow {
-        start (fun (x: int) -> x + 10 |> Task.fromResult)
+        step (fun (x: int) -> x + 10 |> Task.fromResult)
     }
 
     let multiplyByThree = workflow {
-        start (fun (x: int) -> x * 3 |> Task.fromResult)
+        step (fun (x: int) -> x * 3 |> Task.fromResult)
     }
 
     // Chain them directly in outer workflow
     let outer = workflow {
-        start (fun (x: int) -> x |> Task.fromResult)
-        next addTen
-        next multiplyByThree
+        step (fun (x: int) -> x |> Task.fromResult)
+        step addTen
+        step multiplyByThree
     }
 
     // Act: 5 -> 5 -> +10 -> 15 -> *3 -> 45
@@ -350,13 +350,13 @@ let ``Multiple nested workflows can be chained directly``() =
 let ``Nested workflow with multiple steps works directly``() =
     // Arrange: Inner workflow with multiple steps
     let inner = workflow {
-        start (fun (s: string) -> s.ToUpper() |> Task.fromResult)
-        next (fun (s: string) -> s + "!" |> Task.fromResult)
+        step (fun (s: string) -> s.ToUpper() |> Task.fromResult)
+        step (fun (s: string) -> s + "!" |> Task.fromResult)
     }
 
     let outer = workflow {
-        start (fun (s: string) -> "Hello, " + s |> Task.fromResult)
-        next inner
+        step (fun (s: string) -> "Hello, " + s |> Task.fromResult)
+        step inner
     }
 
     // Act

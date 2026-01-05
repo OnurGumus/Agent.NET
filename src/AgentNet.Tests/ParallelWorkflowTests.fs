@@ -36,7 +36,7 @@ let ``FanOut executes all executors and FanIn aggregates results``() =
         { Reports = reports; Consensus = consensus; AverageScore = avgScore } |> Task.fromResult
 
     let parallelWorkflow = workflow {
-        start loadData
+        step loadData
         fanOut technicalAnalyst fundamentalAnalyst sentimentAnalyst
         fanIn summarize
     }
@@ -61,7 +61,7 @@ let ``FanOut with two executors``() =
     let combine = Executor.fromFn "Combine" (fun (results: int list) -> results |> List.sum)
 
     let parallelWorkflow = workflow {
-        start prepare
+        step prepare
         fanOut addTen multiplyThree
         fanIn combine
     }
@@ -85,7 +85,7 @@ let ``FanOut preserves order of results``() =
         String.concat "," results)
 
     let parallelWorkflow = workflow {
-        start identity
+        step identity
         fanOut tag0 tag1 tag2
         fanIn join
     }
@@ -109,10 +109,10 @@ let ``FanOut followed by additional processing``() =
     let format = Executor.fromFn "Format" (fun (total: int) -> $"Total: {total}")
 
     let parallelWorkflow = workflow {
-        start init
+        step init
         fanOut double triple
         fanIn sum
-        next format
+        step format
     }
 
     // Act: 10 -> fanOut: [20, 30] -> sum: 50 -> format: "Total: 50"
@@ -136,7 +136,7 @@ let ``FanOut with custom record types``() =
         packets |> List.map (fun p -> p.Value) |> String.concat "|")
 
     let parallelWorkflow = workflow {
-        start createPackets
+        step createPackets
         fanOut processA processB
         fanIn merge
     }
@@ -162,7 +162,7 @@ let ``FanOut with list syntax and + operator for 6+ branches``() =
     let sum = Executor.fromFn "Sum" (fun (nums: int list) -> List.sum nums)
 
     let parallelWorkflow = workflow {
-        start init
+        step init
         fanOut [+add1; +add2; +add3; +add4; +add5; +add6]
         fanIn sum
     }
@@ -187,7 +187,7 @@ let ``FanOut with list syntax, Task.fromResult and + operator for 6+ branches``(
     let sum (nums: int list) = List.sum nums |> Task.fromResult
 
     let parallelWorkflow = workflow {
-        start init
+        step init
         fanOut [+add1; +add2; +add3; +add4; +add5; +add6]
         fanIn sum
     }

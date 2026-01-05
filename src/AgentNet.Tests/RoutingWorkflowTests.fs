@@ -36,7 +36,7 @@ let ``Route selects correct executor based on DU case``() =
         "Needs manual review")
 
     let routingWorkflow = workflow {
-        start analyze
+        step analyze
         route (function
             | HighConfidence _ -> highHandler
             | LowConfidence _ -> lowHandler
@@ -66,7 +66,7 @@ let ``Route can extract data from DU cases``() =
         "Inconclusive: N/A")
 
     let routingWorkflow = workflow {
-        start analyze
+        step analyze
         route (function
             | HighConfidence _ as result -> formatHigh
             | LowConfidence _ as result -> formatLow
@@ -94,7 +94,7 @@ let ``Route with category-based content handling``() =
     let generalWriter = Executor.fromFn "GeneralWriter" (fun (article: Article) -> { Article = article; Handler = "GeneralDesk" })
 
     let routingWorkflow = workflow {
-        start categorize
+        step categorize
         route (fun article ->
             match article.Category with
             | Tech -> techWriter
@@ -126,11 +126,11 @@ let ``Route followed by additional steps``() =
         $"Result: {label.ToUpper()}")
 
     let routingWorkflow = workflow {
-        start classify
+        step classify
         route (function
             | HighConfidence _ -> processPositive
             | LowConfidence _ | Inconclusive -> processNegative)
-        next format
+        step format
     }
 
     // Act & Assert

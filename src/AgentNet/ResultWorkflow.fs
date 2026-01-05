@@ -217,15 +217,15 @@ type ResultWorkflowBuilder() =
 
     member _.Yield(_) : ResultWorkflowState<'a, 'a, 'e> = { Steps = [] }
 
-    /// Starts the workflow with a result executor
-    [<CustomOperation("start")>]
-    member _.Start(state: ResultWorkflowState<_, _, 'e>, executor: ResultExecutor<'i, 'o, 'e>) : ResultWorkflowState<'i, 'o, 'e> =
+    /// Adds first step - establishes workflow input/output types
+    [<CustomOperation("step")>]
+    member _.StepFirst(state: ResultWorkflowState<_, _, 'e>, executor: ResultExecutor<'i, 'o, 'e>) : ResultWorkflowState<'i, 'o, 'e> =
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapExecutor executor] }
 
-    /// Adds the next step to the workflow
+    /// Adds subsequent step - threads input type through
     /// The executor's input type must match the previous step's output type
-    [<CustomOperation("next")>]
-    member _.Next(state: ResultWorkflowState<'input, 'middle, 'e>, executor: ResultExecutor<'middle, 'output, 'e>) : ResultWorkflowState<'input, 'output, 'e> =
+    [<CustomOperation("step")>]
+    member _.Step(state: ResultWorkflowState<'input, 'middle, 'e>, executor: ResultExecutor<'middle, 'output, 'e>) : ResultWorkflowState<'input, 'output, 'e> =
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapExecutor executor] }
 
     /// Routes to different executors based on the previous step's output

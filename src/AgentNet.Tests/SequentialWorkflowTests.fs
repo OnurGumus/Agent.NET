@@ -1,4 +1,4 @@
-/// Tests for simple sequential workflows (start -> next -> next)
+/// Tests for simple sequential workflows (step -> step -> step)
 /// Based on the first example from docs/WorkflowDSL-Design.md
 module AgentNet.Tests.SequentialWorkflowTests
 
@@ -42,9 +42,9 @@ let ``Simple sequential workflow executes in order``() =
 
     // Build the workflow using the DSL
     let myWorkflow = workflow {
-        start "Researcher" researcher
-        next "Analyzer" analyzer
-        next "Writer" writer
+        step "Researcher" researcher
+        step "Analyzer" analyzer
+        step "Writer" writer
     }
 
     // Act: Run the workflow
@@ -85,9 +85,9 @@ let ``Agent executors integrate with workflow DSL``() =
 
     // Build the workflow using the DSL
     let myWorkflow = workflow {
-        start researcher
-        next analyzer
-        next writer
+        step researcher
+        step analyzer
+        step writer
     }
 
     // Act: Run the workflow with input that matches first pattern
@@ -112,9 +112,9 @@ let ``Workflow output type is correctly inferred from last step``() =
         count > 2)
 
     let myWorkflow = workflow {
-        start parseInput
-        next countKeywords
-        next isSignificant
+        step parseInput
+        step countKeywords
+        step isSignificant
     }
 
     // This compiles without explicit type annotation, proving type inference works
@@ -143,9 +143,9 @@ let ``Each step receives output from previous step``() =
         { Analysis = input; Title = "T"; Summary = "S" })
 
     let myWorkflow = workflow {
-        start step1
-        next step2
-        next step3
+        step step1
+        step step2
+        step step3
     }
 
     // Act
@@ -180,8 +180,8 @@ let ``Workflow with type transformations through pipeline``() =
         { Count = tokenized.Tokens.Length; AverageLength = avgLen; LongestToken = longest })
 
     let myWorkflow = workflow {
-        start tokenize
-        next analyze
+        step tokenize
+        step analyze
     }
 
     // Act
@@ -199,9 +199,9 @@ let ``Sync functions work with Task.fromResult wrapper``() =
     let format (n: int) = $"Result: {n}" |> Task.fromResult
 
     let syncWorkflow = workflow {
-        start parse
-        next double
-        next format
+        step parse
+        step double
+        step format
     }
 
     // Act
@@ -218,9 +218,9 @@ let ``Mixed Task.fromResult and async functions in workflow``() =
     let formatSync (count: int) = $"Word count: {count}" |> Task.fromResult
 
     let mixedWorkflow = workflow {
-        start parseSync     // Uses Task.fromResult - no operator
-        next fetchAsync     // Async - no operator
-        next formatSync     // Uses Task.fromResult - no operator
+        step parseSync     // Uses Task.fromResult - no operator
+        step fetchAsync     // Async - no operator
+        step formatSync     // Uses Task.fromResult - no operator
     }
 
     // Act
