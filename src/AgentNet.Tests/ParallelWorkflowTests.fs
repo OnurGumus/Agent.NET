@@ -18,17 +18,10 @@ type DataPacket = { Id: int; Value: string }
 [<Test>]
 let ``FanOut executes all executors and FanIn aggregates results``() =
     // Arrange: All functions use Task.fromResult pattern
-    let loadData (symbol: string) = 
-        { Symbol = symbol; Price = 150.0 } |> Task.fromResult
-
-    let technicalAnalyst (data: StockData) =
-        { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> Task.fromResult
-
-    let fundamentalAnalyst (data: StockData) =
-        { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> Task.fromResult
-
-    let sentimentAnalyst (data: StockData) =
-        { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> Task.fromResult
+    let loadData (symbol: string) = { Symbol = symbol; Price = 150.0 } |> Task.fromResult
+    let technicalAnalyst (data: StockData) = { Analyst = "Technical"; Rating = "Buy"; Score = 8 } |> Task.fromResult
+    let fundamentalAnalyst (data: StockData) = { Analyst = "Fundamental"; Rating = "Hold"; Score = 6 } |> Task.fromResult
+    let sentimentAnalyst (data: StockData) = { Analyst = "Sentiment"; Rating = "Buy"; Score = 7 } |> Task.fromResult
 
     let summarize (reports: AnalystReport list) =
         let avgScore = reports |> List.averageBy (fun r -> float r.Score)

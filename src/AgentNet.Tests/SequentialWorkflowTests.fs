@@ -102,19 +102,14 @@ let ``Agent executors integrate with workflow DSL``() =
 [<Test>]
 let ``Workflow output type is correctly inferred from last step``() =
     // Arrange: Each step transforms to a different type
-    let parseInput = Executor.fromFn "ParseInput" (fun (input: string) ->
-        { Name = input; Keywords = input.Split(' ') |> Array.toList })
-
-    let countKeywords = Executor.fromFn "CountKeywords" (fun (topic: Topic) ->
-        topic.Keywords.Length)
-
-    let isSignificant = Executor.fromFn "IsSignificant" (fun (count: int) ->
-        count > 2)
+    let parseInput (input: string) = { Name = input; Keywords = input.Split(' ') |> Array.toList } |> Task.fromResult
+    let countKeywords (topic: Topic) = topic.Keywords.Length |> Task.fromResult
+    let isSignificant (count: int) = count > 2 |> Task.fromResult
 
     let myWorkflow = workflow {
-        step parseInput
-        step countKeywords
-        step isSignificant
+        step "ParseInput" parseInput
+        step "CountKeywords" countKeywords
+        step "IsSignificant" isSignificant
     }
 
     // This compiles without explicit type annotation, proving type inference works
