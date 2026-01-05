@@ -12,20 +12,20 @@
 What if building AI agents looked like this?
 
 ```csharp
-// Your existing C# service
+// Your existing .NET service for tooling
 public class StockService 
 { 
     public static string GetQuote(string symbol) => ...
 }
 ```
 
-Wrapped elegantly in F#:
+Wrapped elegantly in an F# function with metadata for the LLM:
 
 ```fsharp
 /// <summary>Gets current stock information</summary>
 /// <param name="symbol">The stock ticker symbol (e.g., AAPL)</param>
 let getStockInfo (symbol: string) =
-    StockService.GetQuote(symbol)  // Call your existing service
+    StockService.GetQuote(symbol)  // Call your existing C# or implement here in F#.
 
 let tool = Tool.createWithDocs <@ getStockInfo @>
 
@@ -53,6 +53,20 @@ let analysisWorkflow = workflow {
 
 ---
 
+## What's Included
+
+| Feature | Description |
+|---------|-------------|
+| **ChatAgent** | AI agents with automatic tool metadata extraction from F# quotations |
+| **TypedAgent** | Structured I/O wrapper for type-safe agent integration in workflows |
+| **workflow CE** | Composable pipelines with SRTP type inference, fan-out/fan-in, routing |
+| **resultWorkflow CE** | Railway-oriented programming with automatic error short-circuiting |
+| **Resilience** | Built-in retry, backoff strategies, timeout, and fallback |
+
+All with clean F# syntax - no attributes, no magic strings, no ceremony.
+
+---
+
 ## Installation
 
 ```bash
@@ -71,13 +85,14 @@ Write normal F# functions with XML documentation (summary only or summary and pa
 open AgentNet
 
 /// Gets the current weather for a city
-let getWeather (city: string) : string =
-    let weather = WeatherApi.fetch city
-    $"The weather in {city} is {weather}"
+let getWeather (city: string) = task {
+    let! weather = WeatherApi.fetch city
+    return $"The weather in {city} is {weather}"
+}
 
 /// <summary>Gets the current time in a timezone</summary>
 /// <param name="timezone">The timezone (e.g., America/New_York)</param>
-let getTime (timezone: string) : string =
+let getTime (timezone: string) =
     let time = TimeApi.now timezone
     $"The current time is {time}"
 
