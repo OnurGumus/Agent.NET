@@ -383,36 +383,41 @@ let! result = Workflow.run "initial input" myWorkflow
 | **Fallback** | `fallback backupStep` | Alternative on failure |
 | **Compose** | `step innerWorkflow` | Nest workflows directly |
 
-### Side-by-Side: Agent.NET vs C# MAF
+### Side-by-Side: Agent.NET Syntax → MAF Output
+
+Agent.NET's `workflow` CE compiles to MAF's graph structure. Here's what you write vs what gets generated:
 
 **Sequential Pipeline**
 
-*Agent.NET:*
+*You write (F#):*
 ```fsharp
 let pipeline = workflow {
     step researcher
     step analyst
     step writer
 }
+
+// Run in-memory for testing
+let! result = Workflow.run input pipeline
+
+// Or compile to MAF for durability
+let mafWorkflow = Workflow.toMAF pipeline
 ```
 
-*C# with MAF:*
+*Compiles to (MAF equivalent):*
 ```csharp
-var graph = new AgentGraphBuilder();
-graph.AddNode("researcher", researcherAgent);
-graph.AddNode("analyst", analystAgent);
-graph.AddNode("writer", writerAgent);
-graph.AddEdge("researcher", "analyst");
-graph.AddEdge("analyst", "writer");
-graph.AddConditionalEdge("writer", _ => EndWorkflow);
-var workflow = graph.Build();
+var builder = new WorkflowBuilder(researcherExecutor);
+builder.AddEdge(researcherExecutor, analystExecutor);
+builder.AddEdge(analystExecutor, writerExecutor);
+builder.WithOutputFrom(writerExecutor);
+var workflow = builder.Build();
 ```
 
 ---
 
 **Parallel Fan-Out / Fan-In**
 
-*Agent.NET:*
+*You write (F#):*
 ```fsharp
 let analysis = workflow {
     step loader
@@ -421,29 +426,24 @@ let analysis = workflow {
 }
 ```
 
-*C# with MAF:*
+*Compiles to (MAF equivalent):*
 ```csharp
-var graph = new AgentGraphBuilder();
-graph.AddNode("loader", loaderAgent);
-graph.AddNode("technical", technicalAgent);
-graph.AddNode("fundamental", fundamentalAgent);
-graph.AddNode("sentiment", sentimentAgent);
-graph.AddNode("summarizer", summarizerAgent);
-graph.AddEdge("loader", "technical");
-graph.AddEdge("loader", "fundamental");
-graph.AddEdge("loader", "sentiment");
-graph.AddEdge("technical", "summarizer");
-graph.AddEdge("fundamental", "summarizer");
-graph.AddEdge("sentiment", "summarizer");
-graph.AddConditionalEdge("summarizer", _ => EndWorkflow);
-var workflow = graph.Build();
+var builder = new WorkflowBuilder(loaderExecutor);
+builder.AddEdge(loaderExecutor, technicalExecutor);
+builder.AddEdge(loaderExecutor, fundamentalExecutor);
+builder.AddEdge(loaderExecutor, sentimentExecutor);
+builder.AddEdge(technicalExecutor, summarizerExecutor);
+builder.AddEdge(fundamentalExecutor, summarizerExecutor);
+builder.AddEdge(sentimentExecutor, summarizerExecutor);
+builder.WithOutputFrom(summarizerExecutor);
+var workflow = builder.Build();
 ```
 
 ---
 
 **Resilience**
 
-*Agent.NET:*
+*You write (F#):*
 ```fsharp
 let resilient = workflow {
     step unreliableService
@@ -454,7 +454,7 @@ let resilient = workflow {
 }
 ```
 
-*C# with MAF + Polly:*
+*Compiles to (MAF + Polly equivalent):*
 ```csharp
 var retryPolicy = Policy
     .Handle<Exception>()
@@ -470,8 +470,7 @@ var fallbackPolicy = Policy<string>
 
 var combinedPolicy = Policy.WrapAsync(fallbackPolicy, timeoutPolicy, retryPolicy);
 
-var result = await combinedPolicy.ExecuteAsync(async () =>
-    await unreliableService.RunAsync(input));
+// Then wire into your executor...
 ```
 
 ---
@@ -608,69 +607,67 @@ See the [StockAdvisorFS](./src/StockAdvisorFS) sample project for a complete exa
 
 ---
 
-## Agent.NET vs. MAF Durable Workflows
+## Workflow: A Semantic Layer for MAF
 
-Agent.NET's `workflow` CE may resemble MAF's WorkflowBuilder, but they solve fundamentally different problems.
+Agent.NET's `workflow` CE is a **semantic layer** for Microsoft Agent Framework (MAF). Define your workflow once in expressive F#, then choose how to run it:
 
-### Agent.NET Workflows
+```fsharp
+let stockAnalysis = workflow {
+    step fetchStockData
+    fanOut technicalAnalysis fundamentalAnalysis sentimentAnalysis
+    fanIn synthesizeReports
+    step generateRecommendation
+}
 
-Designed for **in-memory, local-first orchestration**:
+// In-memory execution (development, testing, or production with your own persistence)
+let! result = Workflow.run input stockAnalysis
 
-- **Strong typing** - Each step is a normal F# function, agent, or executor with enforced `'input -> 'output` type transitions
-- **Composable** - Workflows can be built, nested, or generated at runtime
-- **Lightweight** - No durable runtime or replay engine; ideal for agent pipelines and interactive LLM workflows
+// MAF durable execution (production with automatic durability)
+let mafWorkflow = Workflow.toMAF stockAnalysis
+```
 
-### MAF Durable Workflows
+### Why a Semantic Layer?
 
-Designed for **durable, distributed orchestration** (backed by Azure Durable Functions):
+| Direct MAF (C#) | Agent.NET Workflow (F#) |
+|-----------------|------------------------|
+| Verbose executor classes | Normal F# functions |
+| Manual graph wiring | Declarative `step`, `fanOut`, `fanIn` |
+| Stringly-typed edges | Compiler-enforced type transitions |
+| Resilience via Polly boilerplate | Built-in `retry`, `timeout`, `fallback` |
 
-- **Checkpointing & replay** - Fault tolerance across failures
-- **Serializable graphs** - Workflows persist state and resume automatically
-- **Cloud-native** - Built for long-running, enterprise-scale orchestrations
+### Two Execution Modes
 
-### Comparison
+Agent.NET supports both execution models from a single workflow definition:
 
-| Scenario | Agent.NET | MAF Durable |
-|----------|:---------:|:-----------:|
-| Typed, expressive agent pipelines | ✔️ | |
-| Local-first orchestration | ✔️ | |
-| Dynamic, runtime-generated workflows | ✔️ | |
-| Durable, long-running processes | | ✔️ |
-| Cloud-native distributed orchestration | | ✔️ |
-| Bring-your-own persistence | ✔️ | ✔️ |
+| Mode | API | Description |
+|------|-----|-------------|
+| **In-memory** | `Workflow.run` | Direct execution with full control. Bring your own persistence - you manage state exactly how you want. |
+| **MAF Durable** | `Workflow.toMAF` | Compile to MAF's durable runtime (backed by Azure Durable Functions) with automatic checkpointing, replay, and fault tolerance. |
 
-### Enterprise Use Cases
+**Prefer explicit control?** Use `Workflow.run` and integrate with your own persistence layer - databases, queues, event stores, whatever fits your architecture.
 
-Agent.NET workflows run to completion in-memory, but can participate in enterprise scenarios using a **bring-your-own persistence** model:
+**Want durable orchestration?** Use `Workflow.toMAF` to get enterprise-grade durability with one line of code. You can still use `Workflow.run` for local testing without installing the durable runtime.
 
-- **Segment long-running processes** - Design separate workflows for each segment (e.g., before/after a human approval step), persisting intermediate results between them
-- **Coordinate with durable systems** - Use MAF, Akka.NET, Dapr, Orleans, or Service Bus as the outer orchestrator, with Agent.NET handling typed, local pipeline segments
-- **Embed in larger architectures** - Agent.NET workflows make excellent building blocks within event-driven or queue-based systems
+*Same workflow. Your choice of execution model.*
 
-Agent.NET intentionally avoids prescribing a durability model, giving you full control over persistence and orchestration boundaries.
+## Roadmap
 
-### Choosing the Right Tool
+**v1.0.0-preview.1** (Current)
+- In-memory workflow execution (`Workflow.run`)
+- Sequential pipelines, parallel fan-out/fan-in
+- Conditional routing (`route`)
+- Resilience (`retry`, `timeout`, `fallback`, `backoff`)
+- Result workflows (railway-oriented error handling)
 
-**Use Agent.NET when you want:** expressive type-safe pipelines, local-first orchestration, dynamic or runtime-generated workflows.
+**Upcoming**
+- MAF compilation (`Workflow.toMAF`)
+- Redesigned `route` operation for durable-compatible conditional branching
+- Named step support for graph compilation
 
-**Use MAF when you need:** durable long-running processes, cloud-native resilience and replay, built-in fault tolerance.
-
-Both tools excel in their respective domains and can be combined when needed.
-
----
-
-## Design Philosophy
-
-1. **Quotations for tools** - Automatic metadata extraction, no sync issues
-2. **XML docs for descriptions** - Documentation lives with the code
-3. **Pipeline for agents** - Simple, composable configuration
-4. **CE for workflows** - Complex control flow deserves declarative syntax
-5. **No attributes** - Metadata comes from code, not decorators
-6. **Pure functions first** - Write normal F#, then wrap with quotations
-7. **Type-safe throughout** - Catch errors at compile time
-8. **Composition over inheritance** - Workflows nest inside workflows
+The current `route` operation uses F# pattern matching with dynamic executor selection. To support MAF's serializable graph model, routing will be redesigned to use declarative branch registration while preserving F#'s ergonomic syntax.
 
 ---
+
 
 ## Dependencies
 
