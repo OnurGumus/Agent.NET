@@ -386,36 +386,56 @@ type WorkflowBuilder() =
     member _.Yield(_) : WorkflowState<'a, 'a> = { Steps = []; StepCount = 0 }
 
     // ============ STEP OPERATIONS ============
-    // Unnamed step: Executor or QuotedStep (types that carry their own name)
-    // Named step: SRTP accepts Task fn, Async fn, TypedAgent, Executor, Workflow, or Step
+    // Multiple overloads:
+    // 1. step <@ syncFn @>      - Quotation with sync function, name auto-extracted
+    // 2. step executor         - Executor (has its own name)
+    // 3. step "Name" fn        - Named step with SRTP (Task fn, Async fn, etc.)
 
-    /// Adds first step (Executor or QuotedStep) - types that carry their own name
-    /// For other step types, use the named overload: step "Name" myFn
+    // --- Executor overloads (Executor has its own name) ---
+
+    /// Adds first step with an Executor (uses Executor.Name)
     [<CustomOperation("step")>]
-    member inline _.StepFirst(state: WorkflowState<_, _>, x: ^T) : WorkflowState<'i, 'o> =
-        let (name, step) : string * Step<'i, 'o> =
-            ((^T or NamedStepConv) : (static member ToNamedStep: NamedStepConv * ^T -> string * Step<'i, 'o>) (NamedStepConv, x))
-        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
+    member _.StepFirst(state: WorkflowState<_, _>, exec: Executor<'i, 'o>) : WorkflowState<'i, 'o> =
+        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor exec]; StepCount = state.StepCount + 1 }
 
-    /// Adds first step with name - establishes workflow input/output types (SRTP for any step type)
+    /// Adds subsequent step with an Executor (uses Executor.Name)
+    [<CustomOperation("step")>]
+    member _.Step(state: WorkflowState<'input, 'middle>, exec: Executor<'middle, 'output>) : WorkflowState<'input, 'output> =
+        { Steps = state.Steps @ [WorkflowInternal.wrapExecutor exec]; StepCount = state.StepCount + 1 }
+
+    // --- Named step overloads (explicit name + SRTP for any step type) ---
+
+    /// Adds first step with explicit name (uses SRTP for type resolution)
     [<CustomOperation("step")>]
     member inline _.StepFirst(state: WorkflowState<_, _>, name: string, x: ^T) : WorkflowState<'i, 'o> =
         let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Adds subsequent step (Executor or QuotedStep) - types that carry their own name
-    /// For other step types, use the named overload: step "Name" myFn
-    [<CustomOperation("step")>]
-    member inline _.Step(state: WorkflowState<'input, 'middle>, x: ^T) : WorkflowState<'input, 'output> =
-        let (name, step) : string * Step<'middle, 'output> =
-            ((^T or NamedStepConv) : (static member ToNamedStep: NamedStepConv * ^T -> string * Step<'middle, 'output>) (NamedStepConv, x))
-        { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
-
-    /// Adds subsequent step with name - threads input type through (SRTP for any step type)
+    /// Adds subsequent step with explicit name (uses SRTP for type resolution)
     [<CustomOperation("step")>]
     member inline _.Step(state: WorkflowState<'input, 'middle>, name: string, x: ^T) : WorkflowState<'input, 'output> =
         let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
         { Steps = state.Steps @ [WorkflowInternal.wrapStep name step]; StepCount = state.StepCount + 1 }
+
+    // --- Quotation overloads (name extracted from quotation) ---
+    // These enable pure sync functions 'i -> 'o without requiring Task.fromResult wrapper
+
+    /// Adds first step via quotation - name extracted automatically
+    /// Supports sync functions only (use named step for Task/Async)
+    [<CustomOperation("step")>]
+    member _.StepFirst(state: WorkflowState<_, _>, expr: Expr<'i -> 'o>) : WorkflowState<'i, 'o> =
+        let name = QuotationHelpers.extractName expr
+        let fn = QuotationHelpers.eval expr
+        let wrappedStep = WorkflowInternal.wrapStep name (TaskStep (fun i -> task { return fn i }))
+        { Steps = state.Steps @ [wrappedStep]; StepCount = state.StepCount + 1 }
+
+    /// Adds subsequent step via quotation - name extracted automatically
+    [<CustomOperation("step")>]
+    member _.Step(state: WorkflowState<'input, 'middle>, expr: Expr<'middle -> 'output>) : WorkflowState<'input, 'output> =
+        let name = QuotationHelpers.extractName expr
+        let fn = QuotationHelpers.eval expr
+        let wrappedStep = WorkflowInternal.wrapStep name (TaskStep (fun i -> task { return fn i }))
+        { Steps = state.Steps @ [wrappedStep]; StepCount = state.StepCount + 1 }
 
     // ============ ROUTING ============
 

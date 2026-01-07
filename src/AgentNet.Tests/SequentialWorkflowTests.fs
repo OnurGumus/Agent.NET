@@ -282,17 +282,17 @@ let ``Named step works with module-level functions``() =
     result =! "Value: 10"
 
 [<Test>]
-let ``Quotation q helper enables pure sync functions``() =
+let ``Quotation enables pure sync functions``() =
     // Arrange: Pure sync functions (no Task wrapper needed!)
     let parse (s: string) = s.Length
     let double (n: int) = n * 2
     let format (n: int) = $"Result: {n}"
 
-    // Use q for sync functions - names extracted automatically
+    // Direct quotation syntax - no wrapper needed!
     let syncWorkflow = workflow {
-        step (q <@ parse @>)
-        step (q <@ double @>)
-        step (q <@ format @>)
+        step <@ parse @>
+        step <@ double @>
+        step <@ format @>
     }
 
     // Act

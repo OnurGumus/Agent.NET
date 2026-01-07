@@ -123,9 +123,9 @@ let run (symbol1: string) (symbol2: string) : Task<unit> = task {
     let typedAgent = createTypedAnalysisAgent chatAgent
 
     let wf = workflow {
-        start (Executor.fromTask "FetchBothStocks" fetchBothStocks)
-        next (Executor.fromTypedAgent "CompareStocks" typedAgent)
-        next (Executor.fromFn "GenerateReport" generateReport)
+        step (Executor.fromTask "FetchBothStocks" fetchBothStocks)
+        step (Executor.fromTypedAgent "CompareStocks" typedAgent)
+        step (Executor.fromFn "GenerateReport" generateReport)
     }
 
     printfn "Step 1: Fetching stock data in parallel..."
