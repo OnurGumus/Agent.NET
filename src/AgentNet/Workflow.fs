@@ -167,13 +167,6 @@ and WorkflowDef<'input, 'output> = {
 }
 
 
-/// A quoted step that carries both the extracted name and the step value.
-/// Created via the `q` helper function for quotation-based steps.
-type QuotedStep<'i, 'o> = {
-    Name: string
-    Step: Step<'i, 'o>
-}
-
 /// SRTP witness type for converting various types to Step.
 /// Uses the type class pattern to enable inline resolution at call sites.
 type StepConv = StepConv with
@@ -183,18 +176,6 @@ type StepConv = StepConv with
     static member inline ToStep(_: StepConv, exec: Executor<'i, 'o>) : Step<'i, 'o> = ExecutorStep exec
     static member inline ToStep(_: StepConv, step: Step<'i, 'o>) : Step<'i, 'o> = step  // Passthrough
     static member inline ToStep(_: StepConv, wf: WorkflowDef<'i, 'o>) : Step<'i, 'o> = NestedWorkflow wf
-
-/// SRTP witness type for converting various types to named steps.
-/// Returns (name, Step) tuple for unified handling.
-type NamedStepConv = NamedStepConv with
-    // QuotedStep already has a name (created via `q` helper)
-    static member inline ToNamedStep(_: NamedStepConv, qs: QuotedStep<'i, 'o>) : string * Step<'i, 'o> =
-        (qs.Name, qs.Step)
-
-    // Executor has a name
-    static member inline ToNamedStep(_: NamedStepConv, exec: Executor<'i, 'o>) : string * Step<'i, 'o> =
-        (exec.Name, ExecutorStep exec)
-
 
 /// SRTP witness type for converting route returns to (name, Executor).
 /// Handles both direct Executor and named tuples with various Step types.
@@ -317,10 +298,6 @@ module WorkflowInternal =
             let! result = exec.Execute typedInput ctx
             return result :> obj
         })
-
-    /// Wraps a QuotedStep (name + step) as an untyped WorkflowStep
-    let wrapQuotedStep<'i, 'o> (qs: QuotedStep<'i, 'o>) : WorkflowStep =
-        wrapStep qs.Name qs.Step
 
     /// Wraps a typed router function as an untyped route step
     /// The router takes input and returns an executor to run on that same input
@@ -593,16 +570,6 @@ module WorkflowCE =
     /// Used for fanOut lists with 6+ branches: fanOut [+fn1; +fn2; +fn3; +fn4; +fn5; +fn6]
     let inline (~+) (x: ^T) : Step<'i, 'o> =
         ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
-
-    /// Quotation helper for SYNC functions - extracts name and wraps in Task.
-    /// This enables using plain 'i -> 'o functions without Task/Async wrapper.
-    /// For async functions, use: step "Name" myAsyncFn
-    /// Usage: step (q <@ mySyncFn @>)
-    let q<'i, 'o> (expr: Expr<'i -> 'o>) : QuotedStep<'i, 'o> =
-        let name = QuotationHelpers.extractName expr
-        let fn = QuotationHelpers.eval expr
-        let step = TaskStep (fun i -> task { return fn i })
-        { Name = name; Step = step }
 
 
 /// Functions for executing workflows
