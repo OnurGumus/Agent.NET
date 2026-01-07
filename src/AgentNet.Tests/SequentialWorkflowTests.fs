@@ -223,3 +223,42 @@ let ``Mixed Task.fromResult and async functions in workflow``() =
 
     // Assert
     result =! "Word count: 5"
+
+// ============ toMAF validation tests ============
+
+[<Test>]
+let ``toMAF fails when steps use auto-generated names``() =
+    // Arrange: Workflow with auto-generated names
+    let step1 (s: string) = s.Length |> Task.fromResult
+    let step2 (n: int) = $"Result: {n}" |> Task.fromResult
+
+    let wf = workflow {
+        step step1  // Will get "Step 1"
+        step step2  // Will get "Step 2"
+    }
+
+    // Act & Assert: Should fail with descriptive error
+    let ex = Assert.Throws<System.Exception>(fun () ->
+        Workflow.toMAF "test-workflow" wf |> ignore)
+
+    Assert.That(ex.Message, Does.Contain("Step 1"))
+    Assert.That(ex.Message, Does.Contain("auto-generated names"))
+
+[<Test>]
+let ``toMAF passes validation when all steps have explicit names``() =
+    // Arrange: Workflow with explicit names
+    let step1 (s: string) = s.Length |> Task.fromResult
+    let step2 (n: int) = $"Result: {n}" |> Task.fromResult
+
+    let wf = workflow {
+        step "ParseInput" step1
+        step "FormatOutput" step2
+    }
+
+    // Act & Assert: Should pass validation (but fail on "not implemented")
+    let ex = Assert.Throws<System.Exception>(fun () ->
+        Workflow.toMAF "test-workflow" wf |> ignore)
+
+    // Should NOT mention auto-generated names - validation passed
+    Assert.That(ex.Message, Does.Contain("not yet implemented"))
+    Assert.That(ex.Message, Does.Contain("validation passed"))
