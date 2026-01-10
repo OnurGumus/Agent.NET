@@ -27,9 +27,9 @@ module ResilienceSettings =
 
 /// A step in a workflow pipeline (untyped, internal)
 type WorkflowStep =
-    | Step of name: string * execute: (obj -> WorkflowContext -> Task<obj>)
-    | Route of router: (obj -> WorkflowContext -> Task<obj>)
-    | Parallel of executors: (obj -> WorkflowContext -> Task<obj>) list
+    | Step of durableId: string * name: string * execute: (obj -> WorkflowContext -> Task<obj>)
+    | Route of durableId: string * router: (obj -> WorkflowContext -> Task<obj>)
+    | Parallel of branches: (string * (obj -> WorkflowContext -> Task<obj>)) list  // (durableId, executor) pairs
     | Resilient of settings: ResilienceSettings * inner: WorkflowStep
 
 
@@ -109,11 +109,11 @@ module WorkflowInternal =
         | NestedWorkflow _ -> failwith "NestedWorkflow should be handled in wrapStep, not stepToExecutor"
 
     /// Wraps a Step as an untyped WorkflowStep
-    let wrapStep<'i, 'o> (name: string) (step: Step<'i, 'o>) : WorkflowStep =
+    let wrapStep<'i, 'o> (durableId: string) (name: string) (step: Step<'i, 'o>) : WorkflowStep =
         match step with
         | NestedWorkflow wf ->
             // Execute all nested workflow steps in sequence
-            Step (name, fun input ctx -> task {
+            Step (durableId, name, fun input ctx -> task {
                 let exec = executeWorkflowStepRef.Value
                 let mutable current = input
                 for nestedStep in wf.Steps do
@@ -123,7 +123,7 @@ module WorkflowInternal =
             })
         | _ ->
             let exec = stepToExecutor name step
-            Step (exec.Name, fun input ctx -> task {
+            Step (durableId, exec.Name, fun input ctx -> task {
                 let typedInput = input :?> 'i
                 let! result = exec.Execute typedInput ctx
                 return result :> obj
@@ -132,23 +132,25 @@ module WorkflowInternal =
     /// Wraps a list of Steps as parallel execution (supports mixed types!)
     /// Uses auto-generated durable IDs for each parallel branch
     let wrapStepParallel<'i, 'o> (steps: Step<'i, 'o> list) : WorkflowStep =
-        let wrappedFns =
+        let branches =
             steps
             |> List.mapi (fun i step ->
+                let durableId = getDurableId step
                 let displayName = getDisplayName step
                 let exec = stepToExecutor displayName step
-                warnIfLambda step (getDurableId step)
-                fun (input: obj) (ctx: WorkflowContext) -> task {
+                warnIfLambda step durableId
+                let executor = fun (input: obj) (ctx: WorkflowContext) -> task {
                     let typedInput = input :?> 'i
                     let! result = exec.Execute typedInput ctx
                     return result :> obj
-                })
-        Parallel wrappedFns
+                }
+                (durableId, executor))
+        Parallel branches
 
     /// Wraps a Step as a fan-in aggregator, handling obj list → typed list conversion
-    let wrapStepFanIn<'elem, 'o> (name: string) (step: Step<'elem list, 'o>) : WorkflowStep =
+    let wrapStepFanIn<'elem, 'o> (durableId: string) (name: string) (step: Step<'elem list, 'o>) : WorkflowStep =
         let exec = stepToExecutor name step
-        Step (exec.Name, fun input ctx -> task {
+        Step (durableId, exec.Name, fun input ctx -> task {
             let objList = input :?> obj list
             let typedList = objList |> List.map (fun o -> o :?> 'elem)
             let! result = exec.Execute typedList ctx
@@ -165,8 +167,8 @@ module WorkflowInternal =
         }
 
     /// Wraps a typed executor as an untyped step
-    let wrapExecutor<'i, 'o> (exec: Executor<'i, 'o>) : WorkflowStep =
-        Step (exec.Name, fun input ctx -> task {
+    let wrapExecutor<'i, 'o> (durableId: string) (exec: Executor<'i, 'o>) : WorkflowStep =
+        Step (durableId, exec.Name, fun input ctx -> task {
             let typedInput = input :?> 'i
             let! result = exec.Execute typedInput ctx
             return result :> obj
@@ -174,8 +176,8 @@ module WorkflowInternal =
 
     /// Wraps a typed router function as an untyped route step
     /// The router takes input and returns an executor to run on that same input
-    let wrapRouter<'a, 'b> (router: 'a -> Executor<'a, 'b>) : WorkflowStep =
-        Route (fun input ctx -> task {
+    let wrapRouter<'a, 'b> (durableId: string) (router: 'a -> Executor<'a, 'b>) : WorkflowStep =
+        Route (durableId, fun input ctx -> task {
             let typedInput = input :?> 'a
             let selectedExecutor = router typedInput
             let! result = selectedExecutor.Execute typedInput ctx
@@ -184,19 +186,22 @@ module WorkflowInternal =
 
     /// Wraps a list of typed executors as untyped parallel functions
     let wrapParallel<'i, 'o> (executors: Executor<'i, 'o> list) : WorkflowStep =
-        let wrappedFns =
+        let branches =
             executors
             |> List.map (fun exec ->
-                fun (input: obj) (ctx: WorkflowContext) -> task {
+                let durableId = DurableId.forExecutor exec
+                let executor = fun (input: obj) (ctx: WorkflowContext) -> task {
                     let typedInput = input :?> 'i
                     let! result = exec.Execute typedInput ctx
                     return result :> obj
-                })
-        Parallel wrappedFns
+                }
+                (durableId, executor))
+        Parallel branches
 
     /// Wraps an aggregator executor, handling the obj list → typed list conversion
     let wrapFanIn<'elem, 'o> (exec: Executor<'elem list, 'o>) : WorkflowStep =
-        Step (exec.Name, fun input ctx -> task {
+        let durableId = DurableId.forExecutor exec
+        Step (durableId, exec.Name, fun input ctx -> task {
             // Input is obj list from parallel, convert each element to the expected type
             let objList = input :?> obj list
             let typedList = objList |> List.map (fun o -> o :?> 'elem)
@@ -233,17 +238,19 @@ type WorkflowBuilder() =
     [<CustomOperation("step")>]
     member inline _.StepFirst(state: WorkflowState<_, _>, x: ^T) : WorkflowState<'i, 'o> =
         let step : Step<'i, 'o> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'i, 'o>) (StepConv, x))
+        let durableId = WorkflowInternal.getDurableId step
         let displayName = WorkflowInternal.getDisplayName step
-        WorkflowInternal.warnIfLambda step (WorkflowInternal.getDurableId step)
-        { Steps = state.Steps @ [WorkflowInternal.wrapStep displayName step] }
+        WorkflowInternal.warnIfLambda step durableId
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep durableId displayName step] }
 
     /// Adds subsequent step - threads input type through (uses SRTP for type resolution)
     [<CustomOperation("step")>]
     member inline _.Step(state: WorkflowState<'input, 'middle>, x: ^T) : WorkflowState<'input, 'output> =
         let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
+        let durableId = WorkflowInternal.getDurableId step
         let displayName = WorkflowInternal.getDisplayName step
-        WorkflowInternal.warnIfLambda step (WorkflowInternal.getDurableId step)
-        { Steps = state.Steps @ [WorkflowInternal.wrapStep displayName step] }
+        WorkflowInternal.warnIfLambda step durableId
+        { Steps = state.Steps @ [WorkflowInternal.wrapStep durableId displayName step] }
 
     // ============ ROUTING ============
 
@@ -252,6 +259,8 @@ type WorkflowBuilder() =
     /// Durable IDs are auto-generated for each branch.
     [<CustomOperation("route")>]
     member inline _.Route(state: WorkflowState<'input, 'middle>, router: 'middle -> ^T) : WorkflowState<'input, 'output> =
+        // Generate a durable ID for the route decision point based on input/output types
+        let routeDurableId = DurableId.forRoute router
         let wrappedRouter = fun (input: 'middle) ->
             let result = router input
             let step : Step<'middle, 'output> =
@@ -259,7 +268,7 @@ type WorkflowBuilder() =
             let displayName = WorkflowInternal.getDisplayName step
             WorkflowInternal.warnIfLambda step (WorkflowInternal.getDurableId step)
             WorkflowInternal.stepToExecutor displayName step
-        { Steps = state.Steps @ [WorkflowInternal.wrapRouter wrappedRouter] }
+        { Steps = state.Steps @ [WorkflowInternal.wrapRouter routeDurableId wrappedRouter] }
 
     // ============ FANOUT OPERATIONS ============
     // SRTP overloads for 2-5 arguments - no wrapper needed!
@@ -313,9 +322,10 @@ type WorkflowBuilder() =
     [<CustomOperation("fanIn")>]
     member inline _.FanIn(state: WorkflowState<'input, 'elem list>, x: ^T) : WorkflowState<'input, 'output> =
         let step : Step<'elem list, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'elem list, 'output>) (StepConv, x))
+        let durableId = WorkflowInternal.getDurableId step
         let displayName = WorkflowInternal.getDisplayName step
-        WorkflowInternal.warnIfLambda step (WorkflowInternal.getDurableId step)
-        { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn displayName step] }
+        WorkflowInternal.warnIfLambda step durableId
+        { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn durableId displayName step] }
 
     // ============ RESILIENCE OPERATIONS ============
 
@@ -396,14 +406,14 @@ module Workflow =
     let rec private executeInnerStep (step: WorkflowStep) (input: obj) (ctx: WorkflowContext) : Task<obj> =
         task {
             match step with
-            | Step (_, execute) ->
+            | Step (_, _, execute) ->
                 return! execute input ctx
-            | Route router ->
+            | Route (_, router) ->
                 return! router input ctx
-            | Parallel executors ->
+            | Parallel branches ->
                 let! results =
-                    executors
-                    |> List.map (fun exec -> exec input ctx)
+                    branches
+                    |> List.map (fun (_, exec) -> exec input ctx)
                     |> Task.WhenAll
                 return (results |> Array.toList) :> obj
             | Resilient (settings, inner) ->
