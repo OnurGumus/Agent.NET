@@ -8,16 +8,10 @@ namespace AgentNet.Durable.Interop;
 /// Custom executor that wraps an async step function.
 /// Uses the non-generic Executor base class with ConfigureRoutes.
 /// </summary>
-public class StepExecutor : Executor
+public class StepExecutor(string name, Func<object, Task<object>> execute) : Executor(name)
 {
-    private readonly Func<object, Task<object>> _execute;
 
-    public StepExecutor(string name, Func<object, Task<object>> execute)
-        : base(name)
-    {
-        _execute = execute;
-    }
-
+    /// <inheritdoc/>
     protected override RouteBuilder ConfigureRoutes(RouteBuilder routeBuilder)
     {
         return routeBuilder.AddHandler<object, object>(HandleInputAsync);
@@ -25,23 +19,16 @@ public class StepExecutor : Executor
 
     private async ValueTask<object> HandleInputAsync(object input, IWorkflowContext context, CancellationToken ct)
     {
-        return await _execute(input);
+        return await execute(input);
     }
 }
 
 /// <summary>
 /// Custom executor that runs multiple branches in parallel.
 /// </summary>
-public class ParallelExecutor : Executor
+public class ParallelExecutor(string name, IReadOnlyList<Func<object, Task<object>>> branches) : Executor(name)
 {
-    private readonly IReadOnlyList<Func<object, Task<object>>> _branches;
-
-    public ParallelExecutor(string name, IReadOnlyList<Func<object, Task<object>>> branches)
-        : base(name)
-    {
-        _branches = branches;
-    }
-
+    /// <inheritdoc/>
     protected override RouteBuilder ConfigureRoutes(RouteBuilder routeBuilder)
     {
         return routeBuilder.AddHandler<object, object>(HandleInputAsync);
@@ -49,7 +36,7 @@ public class ParallelExecutor : Executor
 
     private async ValueTask<object> HandleInputAsync(object input, IWorkflowContext context, CancellationToken ct)
     {
-        var tasks = _branches.Select(b => b(input)).ToArray();
+        var tasks = branches.Select(b => b(input)).ToArray();
         var results = await System.Threading.Tasks.Task.WhenAll(tasks);
         return results.ToList();
     }
