@@ -2,7 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Agents.AI.Workflows;
 
-namespace AgentNet.Durable.Interop;
+namespace AgentNet.Interop;
 
 /// <summary>
 /// Custom executor that wraps an async step function.
