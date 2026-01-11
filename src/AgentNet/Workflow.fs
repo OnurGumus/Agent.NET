@@ -17,6 +17,13 @@ type WorkflowStep =
     | Step of durableId: string * name: string * execute: (obj -> WorkflowContext -> Task<obj>)
     | Route of durableId: string * router: (obj -> WorkflowContext -> Task<obj>)
     | Parallel of branches: (string * (obj -> WorkflowContext -> Task<obj>)) list  // (durableId, executor) pairs
+    // Durable-only operations (require DurableTask runtime)
+    | AwaitEvent of durableId: string * eventName: string * eventType: Type
+    | Delay of durableId: string * duration: TimeSpan
+    // Resilience wrappers (wrap the preceding step)
+    | WithRetry of inner: WorkflowStep * maxRetries: int
+    | WithTimeout of inner: WorkflowStep * timeout: TimeSpan
+    | WithFallback of inner: WorkflowStep * fallbackId: string * fallback: (obj -> WorkflowContext -> Task<obj>)
 
 
 /// A workflow step type that unifies Task functions, Async functions, TypedAgents, Executors, and nested Workflows.
@@ -58,7 +65,7 @@ type WorkflowState<'input, 'output> = {
 [<AutoOpen>]
 module WorkflowInternal =
 
-    /// Executes a single workflow step (used by nested workflows)
+    /// Executes a single workflow step (used by nested workflows and in-process execution)
     let rec executeStep (step: WorkflowStep) (input: obj) (ctx: WorkflowContext) : Task<obj> =
         task {
             match step with
@@ -72,6 +79,34 @@ module WorkflowInternal =
                     |> List.map (fun (_, exec) -> exec input ctx)
                     |> Task.WhenAll
                 return (results |> Array.toList) :> obj
+            // Durable-only operations - fail in in-process execution
+            | AwaitEvent (_, eventName, _) ->
+                return failwith $"AwaitEvent '{eventName}' requires durable runtime. Use DurableWorkflow.run instead of Workflow.runInProcess."
+            | Delay (_, duration) ->
+                return failwith $"Delay ({duration}) requires durable runtime. Use DurableWorkflow.run instead of Workflow.runInProcess."
+            // Resilience wrappers - work in in-process execution
+            | WithRetry (inner, maxRetries) ->
+                let rec retry attempt =
+                    task {
+                        try
+                            return! executeStep inner input ctx
+                        with ex when attempt < maxRetries ->
+                            return! retry (attempt + 1)
+                    }
+                return! retry 0
+            | WithTimeout (inner, timeout) ->
+                let execution = executeStep inner input ctx
+                let timeoutTask = Task.Delay(timeout)
+                let! winner = Task.WhenAny(execution, timeoutTask)
+                if obj.ReferenceEquals(winner, timeoutTask) then
+                    return raise (TimeoutException($"Step timed out after {timeout}"))
+                else
+                    return! execution
+            | WithFallback (inner, _, fallback) ->
+                try
+                    return! executeStep inner input ctx
+                with _ ->
+                    return! fallback input ctx
         }
 
     /// Generates a stable durable ID from a Step (always auto-generated, never from Executor.Name)
@@ -316,6 +351,69 @@ type WorkflowBuilder() =
         WorkflowInternal.warnIfLambda step durableId
         { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn durableId displayName step] }
 
+    // ============ RESILIENCE OPERATIONS ============
+    // These wrap the preceding step with retry, timeout, or fallback behavior
+
+    /// Wraps the previous step with retry logic. On failure, retries up to maxRetries times.
+    [<CustomOperation("retry")>]
+    member _.Retry(state: WorkflowState<'input, 'output>, maxRetries: int) : WorkflowState<'input, 'output> =
+        match state.Steps with
+        | [] -> failwith "retry requires a preceding step"
+        | steps ->
+            let allButLast = steps |> List.take (steps.Length - 1)
+            let last = steps |> List.last
+            { Steps = allButLast @ [WithRetry(last, maxRetries)] }
+
+    /// Wraps the previous step with a timeout. Fails with TimeoutException if duration exceeded.
+    [<CustomOperation("timeout")>]
+    member _.Timeout(state: WorkflowState<'input, 'output>, duration: TimeSpan) : WorkflowState<'input, 'output> =
+        match state.Steps with
+        | [] -> failwith "timeout requires a preceding step"
+        | steps ->
+            let allButLast = steps |> List.take (steps.Length - 1)
+            let last = steps |> List.last
+            { Steps = allButLast @ [WithTimeout(last, duration)] }
+
+    /// Wraps the previous step with a fallback. On failure, executes the fallback step instead.
+    [<CustomOperation("fallback")>]
+    member inline _.Fallback(state: WorkflowState<'input, 'output>, x: ^T) : WorkflowState<'input, 'output> =
+        let step : Step<'output, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'output, 'output>) (StepConv, x))
+        let durableId = WorkflowInternal.getDurableId step
+        let displayName = WorkflowInternal.getDisplayName step
+        WorkflowInternal.warnIfLambda step durableId
+        let fallbackExec = fun (input: obj) (ctx: WorkflowContext) ->
+            task {
+                let typedInput = input :?> 'output
+                let exec = WorkflowInternal.stepToExecutor displayName step
+                let! result = exec.Execute typedInput ctx
+                return result :> obj
+            }
+        match state.Steps with
+        | [] -> failwith "fallback requires a preceding step"
+        | steps ->
+            let allButLast = steps |> List.take (steps.Length - 1)
+            let last = steps |> List.last
+            { Steps = allButLast @ [WithFallback(last, durableId, fallbackExec)] }
+
+    // ============ DURABLE OPERATIONS ============
+    // These operations require DurableTask runtime - will fail with runInProcess
+
+    /// Waits for an external event with the given name and expected type.
+    /// The workflow is checkpointed and suspended until the event arrives.
+    /// This operation requires DurableTask runtime - will fail with runInProcess.
+    [<CustomOperation("awaitEvent")>]
+    member _.AwaitEvent(state: WorkflowState<'input, _>, eventName: string) : WorkflowState<'input, 'T> =
+        let durableId = $"AwaitEvent_{eventName}_{typeof<'T>.Name}"
+        { Steps = state.Steps @ [AwaitEvent(durableId, eventName, typeof<'T>)] }
+
+    /// Delays the workflow for the specified duration.
+    /// The workflow is checkpointed and suspended during the delay.
+    /// This operation requires DurableTask runtime - will fail with runInProcess.
+    [<CustomOperation("delayFor")>]
+    member _.DelayFor(state: WorkflowState<'input, 'output>, duration: TimeSpan) : WorkflowState<'input, 'output> =
+        let durableId = $"Delay_{int duration.TotalMilliseconds}ms"
+        { Steps = state.Steps @ [Delay(durableId, duration)] }
+
     /// Builds the final workflow definition
     member _.Run(state: WorkflowState<'input, 'output>) : WorkflowDef<'input, 'output> =
         { Name = None; Steps = state.Steps }
@@ -381,6 +479,54 @@ module Workflow =
             // Generate unique ID combining branch IDs and step index
             let parallelId = $"Parallel_{stepIndex}_" + (branches |> List.map fst |> String.concat "_")
             ExecutorFactory.CreateParallel(parallelId, branchFns)
+
+        // Durable-only operations - cannot be compiled for in-process MAF execution
+        | AwaitEvent (_, eventName, _) ->
+            failwith $"AwaitEvent '{eventName}' cannot be compiled for in-process execution. Use DurableWorkflow.toOrchestration instead."
+        | Delay (_, duration) ->
+            failwith $"Delay ({duration}) cannot be compiled for in-process execution. Use DurableWorkflow.toOrchestration instead."
+
+        // Resilience wrappers - compile by wrapping the inner step execution
+        | WithRetry (inner, maxRetries) ->
+            let executorId = $"WithRetry_{stepIndex}_{maxRetries}"
+            let fn = Func<obj, Task<obj>>(fun input ->
+                let ctx = WorkflowContext.create()
+                let rec retry attempt =
+                    task {
+                        try
+                            return! executeStep inner input ctx
+                        with ex when attempt < maxRetries ->
+                            return! retry (attempt + 1)
+                    }
+                retry 0)
+            ExecutorFactory.CreateStep(executorId, fn)
+
+        | WithTimeout (inner, timeout) ->
+            let executorId = $"WithTimeout_{stepIndex}_{int timeout.TotalMilliseconds}ms"
+            let fn = Func<obj, Task<obj>>(fun input ->
+                task {
+                    let ctx = WorkflowContext.create()
+                    let execution = executeStep inner input ctx
+                    let timeoutTask = Task.Delay(timeout)
+                    let! winner = Task.WhenAny(execution, timeoutTask)
+                    if obj.ReferenceEquals(winner, timeoutTask) then
+                        return raise (TimeoutException($"Step timed out after {timeout}"))
+                    else
+                        return! execution
+                })
+            ExecutorFactory.CreateStep(executorId, fn)
+
+        | WithFallback (inner, fallbackId, fallback) ->
+            let executorId = $"WithFallback_{stepIndex}_{fallbackId}"
+            let fn = Func<obj, Task<obj>>(fun input ->
+                task {
+                    let ctx = WorkflowContext.create()
+                    try
+                        return! executeStep inner input ctx
+                    with _ ->
+                        return! fallback input ctx
+                })
+            ExecutorFactory.CreateStep(executorId, fn)
 
     /// Compiles a workflow definition to MAF Workflow using WorkflowBuilder.
     /// Returns a Workflow that can be executed with InProcessExecution.RunAsync.
