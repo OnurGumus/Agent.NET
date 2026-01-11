@@ -32,8 +32,28 @@ module DurableWorkflowExtensions =
         /// This operation requires DurableTask runtime - will fail with runInProcess.
         [<CustomOperation("awaitEvent")>]
         member _.AwaitEvent(state: WorkflowState<'input, _>, eventName: string, _witness: 'T) : WorkflowState<'input, 'T> =
-            let durableId = $"AwaitEvent_{eventName}_{typeof<'T>.Name}"
-            { Name = state.Name; Steps = state.Steps @ [AwaitEvent(durableId, eventName, typeof<'T>)] }
+            // Early validation - fail fast at workflow construction time
+            if String.IsNullOrWhiteSpace(eventName) then
+                failwith "awaitEvent: event name cannot be null or empty"
+
+            let eventType = typeof<'T>
+            if not (eventType.IsPublic || eventType.IsNestedPublic) then
+                failwith $"awaitEvent: event type '{eventType.FullName}' must be public"
+
+            if eventType.IsAbstract then
+                failwith $"awaitEvent: event type '{eventType.FullName}' cannot be abstract"
+
+            let durableId = $"AwaitEvent_{eventName}_{eventType.Name}"
+
+            // Pre-baked executor function - captures 'T at construction time
+            // No reflection needed at execution time
+            let exec = fun (ctxObj: obj) -> task {
+                let ctx = ctxObj :?> TaskOrchestrationContext
+                let! result = ctx.WaitForExternalEvent<'T>(eventName)
+                return box result
+            }
+
+            { Name = state.Name; Steps = state.Steps @ [AwaitEvent(durableId, exec)] }
 
         /// Delays the workflow for the specified duration.
         /// The workflow is checkpointed and suspended during the delay.
@@ -139,21 +159,11 @@ module Workflow =
                 let parallelId = $"Parallel_{stepIndex}_" + (branches |> List.map fst |> String.concat "_")
                 ExecutorFactory.CreateParallel(parallelId, branchFns)
 
-            // Durable operations - call DTFx primitives
-            | AwaitEvent (durableId, eventName, eventType) ->
+            // Durable operations - call pre-baked executor (no reflection)
+            | AwaitEvent (durableId, exec) ->
                 let executorId = $"{durableId}_{stepIndex}"
-                let fn = Func<obj, Task<obj>>(fun _ -> task {
-                    // Call WaitForExternalEvent<T> via reflection for correct type
-                    let method =
-                        typeof<TaskOrchestrationContext>
-                            .GetMethod("WaitForExternalEvent", [| typeof<string> |])
-                            .MakeGenericMethod(eventType)
-                    let resultTask = method.Invoke(ctx, [| eventName |]) :?> Task
-                    do! resultTask
-                    // Get result via reflection from Task<T>
-                    let resultProp = resultTask.GetType().GetProperty("Result")
-                    return resultProp.GetValue(resultTask)
-                })
+                // exec already captures the typed WaitForExternalEventAsync<'T> call
+                let fn = Func<obj, Task<obj>>(fun _ -> exec ctx)
                 ExecutorFactory.CreateStep(executorId, fn)
 
             | Delay (durableId, duration) ->
