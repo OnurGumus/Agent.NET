@@ -12,10 +12,10 @@ type ApprovalDecision = { Approved: bool; Reason: string }
 
 [<Test>]
 let ``awaitEvent creates AwaitEvent step in workflow``() =
-    // Arrange & Act
-    let durableWorkflow: WorkflowDef<string, ApprovalDecision> = workflow {
+    // Arrange & Act - using type witness pattern
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x.ToUpper() |> Task.fromResult)
-        awaitEvent "ApprovalDecision"
+        awaitEvent "ApprovalDecision" eventOf<ApprovalDecision>
     }
 
     // Assert: Workflow has 2 steps
@@ -35,10 +35,10 @@ let ``delay creates Delay step in workflow``() =
 [<Test>]
 let ``awaitEvent and delay can be combined``() =
     // Arrange & Act
-    let durableWorkflow: WorkflowDef<string, ApprovalDecision> = workflow {
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x |> Task.fromResult)
         delayFor (TimeSpan.FromMinutes 5.)
-        awaitEvent "HumanReview"
+        awaitEvent "HumanReview" eventOf<ApprovalDecision>
     }
 
     // Assert: Workflow has 3 steps
@@ -47,9 +47,9 @@ let ``awaitEvent and delay can be combined``() =
 [<Test>]
 let ``runInProcess fails for workflow with awaitEvent``() =
     // Arrange
-    let durableWorkflow: WorkflowDef<string, ApprovalDecision> = workflow {
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x.ToUpper() |> Task.fromResult)
-        awaitEvent "ApprovalDecision"
+        awaitEvent "ApprovalDecision" eventOf<ApprovalDecision>
     }
 
     // Act & Assert - Exception is thrown during MAF compilation
@@ -75,9 +75,9 @@ let ``runInProcess fails for workflow with delay``() =
 [<Test>]
 let ``containsDurableOperations returns true for workflow with awaitEvent``() =
     // Arrange
-    let durableWorkflow: WorkflowDef<string, string> = workflow {
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x |> Task.fromResult)
-        awaitEvent "TestEvent"
+        awaitEvent "TestEvent" eventOf<string>
     }
 
     // Act & Assert
@@ -108,9 +108,9 @@ let ``containsDurableOperations returns false for workflow without durable ops``
 [<Test>]
 let ``containsDurableOperations detects durable ops in workflow``() =
     // Arrange
-    let durableWorkflow: WorkflowDef<string, string> = workflow {
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x |> Task.fromResult)
-        awaitEvent "Event"
+        awaitEvent "Event" eventOf<string>
     }
 
     // Act & Assert
@@ -119,9 +119,9 @@ let ``containsDurableOperations detects durable ops in workflow``() =
 [<Test>]
 let ``validateForInProcess throws for durable workflow``() =
     // Arrange
-    let durableWorkflow: WorkflowDef<string, string> = workflow {
+    let durableWorkflow = workflow {
         step (fun (x: string) -> x |> Task.fromResult)
-        awaitEvent "Event"
+        awaitEvent "Event" eventOf<string>
     }
 
     // Act & Assert
@@ -138,6 +138,21 @@ let ``validateForInProcess succeeds for non-durable workflow``() =
 
     // Act & Assert - should not throw
     DurableWorkflow.validateForInProcess normalWorkflow
+
+[<Test>]
+let ``awaitEvent type flows to next step``() =
+    // Arrange & Act - event type becomes input for next step
+    let sendApprovalEmail (decision: ApprovalDecision) =
+        $"Email sent: {decision.Reason}" |> Task.fromResult
+
+    let durableWorkflow = workflow {
+        step (fun (x: string) -> x |> Task.fromResult)
+        awaitEvent "ApprovalDecision" eventOf<ApprovalDecision>
+        step sendApprovalEmail
+    }
+
+    // Assert: Workflow has 3 steps and compiles correctly
+    durableWorkflow.Steps.Length =! 3
 
 [<Test>]
 let ``Resilience ops work fine without durable ops via runInProcess``() =

@@ -9,12 +9,18 @@ open AgentNet
 [<AutoOpen>]
 module DurableWorkflowExtensions =
 
+    /// Type witness helper for awaitEvent.
+    /// Usage: awaitEvent "ApprovalEvent" eventOf<ApprovalDecision>
+    let eventOf<'T> : 'T = Unchecked.defaultof<'T>
+
     type WorkflowBuilder with
         /// Waits for an external event with the given name and expected type.
         /// The workflow is checkpointed and suspended until the event arrives.
+        /// The received event becomes the input for the next step.
+        /// Usage: awaitEvent "ApprovalEvent" eventOf<ApprovalDecision>
         /// This operation requires DurableTask runtime - will fail with runInProcess.
         [<CustomOperation("awaitEvent")>]
-        member _.AwaitEvent(state: WorkflowState<'input, _>, eventName: string) : WorkflowState<'input, 'T> =
+        member _.AwaitEvent(state: WorkflowState<'input, _>, eventName: string, _witness: 'T) : WorkflowState<'input, 'T> =
             let durableId = $"AwaitEvent_{eventName}_{typeof<'T>.Name}"
             { Steps = state.Steps @ [AwaitEvent(durableId, eventName, typeof<'T>)] }
 
