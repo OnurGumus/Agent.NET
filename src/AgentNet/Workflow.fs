@@ -148,10 +148,17 @@ module WorkflowInternal =
         Parallel branches
 
     /// Wraps a Step as a fan-in aggregator, handling obj list → typed list conversion
+    /// Handles both F# list and C# List<object> (from MAF ParallelExecutor)
     let wrapStepFanIn<'elem, 'o> (durableId: string) (name: string) (step: Step<'elem list, 'o>) : WorkflowStep =
         let exec = stepToExecutor name step
         Step (durableId, exec.Name, fun input ctx -> task {
-            let objList = input :?> obj list
+            // Input from MAF Parallel is List<object>, convert to F# list
+            let objList =
+                match input with
+                | :? System.Collections.IList as csList ->
+                    csList |> Seq.cast<obj> |> Seq.toList
+                | _ ->
+                    input :?> obj list  // Fallback for direct F# list
             let typedList = objList |> List.map (fun o -> o :?> 'elem)
             let! result = exec.Execute typedList ctx
             return result :> obj
@@ -190,11 +197,17 @@ module WorkflowInternal =
         Parallel branches
 
     /// Wraps an aggregator executor, handling the obj list → typed list conversion
+    /// Handles both F# list and C# List<object> (from MAF ParallelExecutor)
     let wrapFanIn<'elem, 'o> (exec: Executor<'elem list, 'o>) : WorkflowStep =
         let durableId = DurableId.forExecutor exec
         Step (durableId, exec.Name, fun input ctx -> task {
-            // Input is obj list from parallel, convert each element to the expected type
-            let objList = input :?> obj list
+            // Input from MAF Parallel is List<object>, convert to F# list
+            let objList =
+                match input with
+                | :? System.Collections.IList as csList ->
+                    csList |> Seq.cast<obj> |> Seq.toList
+                | _ ->
+                    input :?> obj list  // Fallback for direct F# list
             let typedList = objList |> List.map (fun o -> o :?> 'elem)
             let! result = exec.Execute typedList ctx
             return result :> obj
@@ -334,22 +347,27 @@ module Workflow =
 
     // ============ MAF COMPILATION ============
 
-    /// Converts an AgentNet WorkflowStep to a MAF Executor
-    let rec private toMAFExecutor (step: WorkflowStep) : MAFExecutor =
+    /// Converts an AgentNet WorkflowStep to a MAF Executor.
+    /// The stepIndex is used to ensure unique executor IDs within a workflow.
+    let rec private toMAFExecutor (stepIndex: int) (step: WorkflowStep) : MAFExecutor =
         match step with
-        | Step (durableId, name, execute) ->
+        | Step (durableId, _, execute) ->
             // Wrap the execute function, creating an AgentNet context for execution
+            // Combine durableId with stepIndex to ensure uniqueness within workflow
+            let executorId = $"{durableId}_{stepIndex}"
             let fn = Func<obj, Task<obj>>(fun input ->
                 let ctx = WorkflowContext.create()
                 execute input ctx)
-            ExecutorFactory.CreateStep(name, fn)
+            ExecutorFactory.CreateStep(executorId, fn)
 
         | Route (durableId, router) ->
             // Router selects and executes the appropriate branch
+            // Combine durableId with stepIndex to ensure uniqueness
+            let executorId = $"{durableId}_{stepIndex}"
             let fn = Func<obj, Task<obj>>(fun input ->
                 let ctx = WorkflowContext.create()
                 router input ctx)
-            ExecutorFactory.CreateStep("Router", fn)
+            ExecutorFactory.CreateStep(executorId, fn)
 
         | Parallel branches ->
             // Create parallel executor from branches
@@ -360,7 +378,9 @@ module Workflow =
                         let ctx = WorkflowContext.create()
                         exec input ctx))
                 |> ResizeArray
-            ExecutorFactory.CreateParallel("Parallel", branchFns)
+            // Generate unique ID combining branch IDs and step index
+            let parallelId = $"Parallel_{stepIndex}_" + (branches |> List.map fst |> String.concat "_")
+            ExecutorFactory.CreateParallel(parallelId, branchFns)
 
     /// Compiles a workflow definition to MAF Workflow using WorkflowBuilder.
     /// Returns a Workflow that can be executed with InProcessExecution.RunAsync.
@@ -369,27 +389,57 @@ module Workflow =
         let name = workflow.Name |> Option.defaultValue "Workflow"
         match workflow.Steps with
         | [] -> failwith "Workflow must have at least one step"
-        | firstStep :: restSteps ->
-            // Create executors for all steps
-            let firstExecutor = toMAFExecutor firstStep
-            let restExecutors = restSteps |> List.map toMAFExecutor
+        | steps ->
+            // Create executors for all steps with unique indices
+            let executors = steps |> List.mapi (fun i step -> toMAFExecutor i step)
 
-            // Build workflow using MAFWorkflowBuilder
-            let mutable builder = MAFWorkflowBuilder(firstExecutor).WithName(name)
+            match executors with
+            | [] -> failwith "Workflow must have at least one step"
+            | firstExecutor :: restExecutors ->
+                // Build workflow using MAFWorkflowBuilder
+                let mutable builder = MAFWorkflowBuilder(firstExecutor).WithName(name)
 
-            // Add edges between consecutive executors
-            let mutable prev = firstExecutor
-            for exec in restExecutors do
-                builder <- builder.AddEdge(prev, exec)
-                prev <- exec
+                // Add edges between consecutive executors
+                let mutable prev = firstExecutor
+                for exec in restExecutors do
+                    builder <- builder.AddEdge(prev, exec)
+                    prev <- exec
 
-            // Mark the last executor as output
-            builder <- builder.WithOutputFrom(prev)
+                // Mark the last executor as output
+                builder <- builder.WithOutputFrom(prev)
 
-            // Build and return the workflow
-            builder.Build()
+                // Build and return the workflow
+                builder.Build()
 
     // ============ MAF IN-PROCESS EXECUTION ============
+
+    /// Converts MAF result data to the expected F# output type.
+    /// Handles List<object> from parallel execution by converting to F# list.
+    let private convertToOutput<'output> (data: obj) : 'output =
+        // Try direct cast first
+        match data with
+        | :? 'output as result -> result
+        | _ ->
+            // Check if we have a List<object> from parallel execution
+            // and 'output is an F# list type
+            let outputType = typeof<'output>
+            if outputType.IsGenericType &&
+               outputType.GetGenericTypeDefinition() = typedefof<_ list> then
+                // 'output is an F# list - convert List<object> to F# list
+                match data with
+                | :? System.Collections.IList as objList ->
+                    // Convert to F# list by unboxing each element
+                    let converted =
+                        objList
+                        |> Seq.cast<obj>
+                        |> Seq.toList
+                    // Box as obj list, then cast to 'output
+                    // This works because F# list is covariant for reference types
+                    box converted :?> 'output
+                | _ ->
+                    data :?> 'output
+            else
+                data :?> 'output
 
     /// Runs a workflow via MAF InProcessExecution.
     /// The workflow is compiled to MAF format and executed in-process.
@@ -411,7 +461,7 @@ module Workflow =
                 | _ -> ()
 
             match lastResult with
-            | Some data -> return data :?> 'output
+            | Some data -> return convertToOutput<'output> data
             | None -> return failwith "Workflow did not produce output. No ExecutorCompletedEvent found."
         }
 
