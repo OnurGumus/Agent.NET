@@ -12,34 +12,11 @@ type MAFWorkflowBuilder = Microsoft.Agents.AI.Workflows.WorkflowBuilder
 type MAFInProcessExecution = Microsoft.Agents.AI.Workflows.InProcessExecution
 type MAFExecutorCompletedEvent = Microsoft.Agents.AI.Workflows.ExecutorCompletedEvent
 
-/// Backoff strategy for retries
-type BackoffStrategy =
-    | Immediate
-    | Linear of delay: TimeSpan
-    | Exponential of initial: TimeSpan * multiplier: float
-
-/// Resilience settings for a step
-type ResilienceSettings = {
-    RetryCount: int
-    Backoff: BackoffStrategy
-    Timeout: TimeSpan option
-    Fallback: (obj -> WorkflowContext -> Task<obj>) option
-}
-
-module ResilienceSettings =
-    let defaults = {
-        RetryCount = 0
-        Backoff = Immediate
-        Timeout = None
-        Fallback = None
-    }
-
 /// A step in a workflow pipeline (untyped, internal)
 type WorkflowStep =
     | Step of durableId: string * name: string * execute: (obj -> WorkflowContext -> Task<obj>)
     | Route of durableId: string * router: (obj -> WorkflowContext -> Task<obj>)
     | Parallel of branches: (string * (obj -> WorkflowContext -> Task<obj>)) list  // (durableId, executor) pairs
-    | Resilient of settings: ResilienceSettings * inner: WorkflowStep
 
 
 /// A workflow step type that unifies Task functions, Async functions, TypedAgents, Executors, and nested Workflows.
@@ -81,8 +58,21 @@ type WorkflowState<'input, 'output> = {
 [<AutoOpen>]
 module WorkflowInternal =
 
-    /// Forward reference to executeInnerStep (set by Workflow module after it's defined)
-    let mutable internal executeWorkflowStepRef: (WorkflowStep -> obj -> WorkflowContext -> Task<obj>) option = None
+    /// Executes a single workflow step (used by nested workflows)
+    let rec executeStep (step: WorkflowStep) (input: obj) (ctx: WorkflowContext) : Task<obj> =
+        task {
+            match step with
+            | Step (_, _, execute) ->
+                return! execute input ctx
+            | Route (_, router) ->
+                return! router input ctx
+            | Parallel branches ->
+                let! results =
+                    branches
+                    |> List.map (fun (_, exec) -> exec input ctx)
+                    |> Task.WhenAll
+                return (results |> Array.toList) :> obj
+        }
 
     /// Generates a stable durable ID from a Step (always auto-generated, never from Executor.Name)
     let getDurableId<'i, 'o> (step: Step<'i, 'o>) : string =
@@ -125,10 +115,9 @@ module WorkflowInternal =
         | NestedWorkflow wf ->
             // Execute all nested workflow steps in sequence
             Step (durableId, name, fun input ctx -> task {
-                let exec = executeWorkflowStepRef.Value
                 let mutable current = input
                 for nestedStep in wf.Steps do
-                    let! result = exec nestedStep current ctx
+                    let! result = executeStep nestedStep current ctx
                     current <- result
                 return current
             })
@@ -167,15 +156,6 @@ module WorkflowInternal =
             let! result = exec.Execute typedList ctx
             return result :> obj
         })
-
-    /// Converts a Step to a fallback function for resilience settings
-    let stepToFallback<'i, 'o> (step: Step<'i, 'o>) : (obj -> WorkflowContext -> Task<obj>) =
-        let exec = stepToExecutor "Fallback" step
-        fun (input: obj) (ctx: WorkflowContext) -> task {
-            let typedInput = input :?> 'i
-            let! result = exec.Execute typedInput ctx
-            return result :> obj
-        }
 
     /// Wraps a typed executor as an untyped step
     let wrapExecutor<'i, 'o> (durableId: string) (exec: Executor<'i, 'o>) : WorkflowStep =
@@ -219,21 +199,6 @@ module WorkflowInternal =
             let! result = exec.Execute typedList ctx
             return result :> obj
         })
-
-    /// Modifies the last step with a resilience update function
-    let modifyLastWithResilience (updateSettings: ResilienceSettings -> ResilienceSettings) (steps: WorkflowStep list) : WorkflowStep list =
-        match List.rev steps with
-        | [] -> failwith "No previous step to modify"
-        | last :: rest ->
-            let newLast =
-                match last with
-                | Resilient (settings, inner) ->
-                    // Already wrapped - update the settings
-                    Resilient (updateSettings settings, inner)
-                | other ->
-                    // Wrap with new resilience settings
-                    Resilient (updateSettings ResilienceSettings.defaults, other)
-            List.rev (newLast :: rest)
 
 
 /// Builder for the workflow computation expression
@@ -338,33 +303,6 @@ type WorkflowBuilder() =
         WorkflowInternal.warnIfLambda step durableId
         { Steps = state.Steps @ [WorkflowInternal.wrapStepFanIn durableId displayName step] }
 
-    // ============ RESILIENCE OPERATIONS ============
-
-    /// Sets retry count for the previous step
-    [<CustomOperation("retry")>]
-    member _.Retry(state: WorkflowState<'input, 'output>, count: int) : WorkflowState<'input, 'output> =
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with RetryCount = count }) }
-
-    /// Sets backoff strategy for retries on the previous step
-    [<CustomOperation("backoff")>]
-    member _.Backoff(state: WorkflowState<'input, 'output>, strategy: BackoffStrategy) : WorkflowState<'input, 'output> =
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Backoff = strategy }) }
-
-    /// Sets timeout for the previous step
-    [<CustomOperation("timeout")>]
-    member _.Timeout(state: WorkflowState<'input, 'output>, duration: TimeSpan) : WorkflowState<'input, 'output> =
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Timeout = Some duration }) }
-
-    // ============ FALLBACK OPERATIONS ============
-    // Uses inline SRTP to accept Task fn, Async fn, TypedAgent, Executor, or Step directly
-
-    /// Sets fallback for the previous step (uses SRTP for type resolution)
-    [<CustomOperation("fallback")>]
-    member inline _.Fallback(state: WorkflowState<'input, 'output>, x: ^T) : WorkflowState<'input, 'output> =
-        let step : Step<'middle, 'output> = ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'middle, 'output>) (StepConv, x))
-        let fallbackFn = WorkflowInternal.stepToFallback step
-        { state with Steps = state.Steps |> WorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
-
     /// Builds the final workflow definition
     member _.Run(state: WorkflowState<'input, 'output>) : WorkflowDef<'input, 'output> =
         { Name = None; Steps = state.Steps }
@@ -390,114 +328,7 @@ module WorkflowCE =
 [<RequireQualifiedAccess>]
 module Workflow =
 
-    /// Calculates delay for a given retry attempt based on backoff strategy
-    let private calculateDelay (strategy: BackoffStrategy) (attempt: int) : TimeSpan =
-        match strategy with
-        | Immediate -> TimeSpan.Zero
-        | Linear delay -> delay
-        | Exponential (initial, multiplier) ->
-            let factor = Math.Pow(multiplier, float (attempt - 1))
-            TimeSpan.FromMilliseconds(initial.TotalMilliseconds * factor)
-
-    /// Executes a task operation with timeout
-    let private withTimeout (timeout: TimeSpan) (operation: Task<'a>) : Task<'a> =
-        task {
-            use cts = new System.Threading.CancellationTokenSource()
-            let timeoutTask = Task.Delay(timeout, cts.Token)
-            let! completed = Task.WhenAny(operation, timeoutTask)
-
-            if Object.ReferenceEquals(completed, timeoutTask) then
-                return raise (TimeoutException("Operation timed out"))
-            else
-                cts.Cancel()
-                return! operation
-        }
-
-    /// Executes an inner step (non-resilient) - used by bespoke runtime
-    let rec private executeInnerStep (step: WorkflowStep) (input: obj) (ctx: WorkflowContext) : Task<obj> =
-        task {
-            match step with
-            | Step (_, _, execute) ->
-                return! execute input ctx
-            | Route (_, router) ->
-                return! router input ctx
-            | Parallel branches ->
-                let! results =
-                    branches
-                    |> List.map (fun (_, exec) -> exec input ctx)
-                    |> Task.WhenAll
-                return (results |> Array.toList) :> obj
-            | Resilient (settings, inner) ->
-                return! executeWithResilience settings inner input ctx
-        }
-
-    /// Executes a step with resilience (retry, timeout, fallback) - used by bespoke runtime
-    and private executeWithResilience (settings: ResilienceSettings) (inner: WorkflowStep) (input: obj) (ctx: WorkflowContext) : Task<obj> =
-        let rec attemptWithRetry (remainingRetries: int) (attempt: int) : Task<obj> =
-            task {
-                try
-                    // Apply timeout if specified
-                    let operation = executeInnerStep inner input ctx
-                    let timedOperation =
-                        match settings.Timeout with
-                        | Some t -> withTimeout t operation
-                        | None -> operation
-
-                    return! timedOperation
-                with ex ->
-                    if remainingRetries > 0 then
-                        // Calculate and apply backoff delay
-                        let delay = calculateDelay settings.Backoff attempt
-                        if delay > TimeSpan.Zero then
-                            do! Task.Delay (int delay.TotalMilliseconds)
-
-                        // Retry
-                        return! attemptWithRetry (remainingRetries - 1) (attempt + 1)
-                    else
-                        // All retries exhausted - try fallback or rethrow
-                        match settings.Fallback with
-                        | Some fallbackFn ->
-                            return! fallbackFn input ctx
-                        | None ->
-                            return raise ex
-            }
-
-        attemptWithRetry settings.RetryCount 1
-
-    // Initialize the forward reference so nested workflows can execute
-    do WorkflowInternal.executeWorkflowStepRef <- Some executeInnerStep
-
-    /// Runs a workflow with the given input and context using bespoke F# runtime.
-    /// Provides type-safe execution with built-in resilience support.
-    let runWithContext<'input, 'output> (input: 'input) (ctx: WorkflowContext) (workflow: WorkflowDef<'input, 'output>) : Task<'output> =
-        task {
-            let mutable current: obj = input :> obj
-
-            for step in workflow.Steps do
-                let! result = executeInnerStep step current ctx
-                current <- result
-
-            return current :?> 'output
-        }
-
-    /// Runs a workflow with the given input using bespoke F# runtime (creates a new context).
-    /// Provides type-safe execution with built-in resilience support.
-    let run<'input, 'output> (input: 'input) (workflow: WorkflowDef<'input, 'output>) : Task<'output> =
-        let ctx = WorkflowContext.create ()
-        runWithContext input ctx workflow
-
-    /// Runs a workflow synchronously using bespoke F# runtime.
-    let runSync<'input, 'output> (input: 'input) (workflow: WorkflowDef<'input, 'output>) : 'output =
-        (workflow |> run input).GetAwaiter().GetResult()
-
-    /// Converts a workflow to an executor (enables workflow composition)
-    let toExecutor<'input, 'output> (name: string) (workflow: WorkflowDef<'input, 'output>) : Executor<'input, 'output> =
-        {
-            Name = name
-            Execute = fun input ctx -> runWithContext input ctx workflow
-        }
-
-    /// Sets the name of a workflow (required for MAF compilation and InProcessExecution)
+    /// Sets the name of a workflow (used for MAF compilation)
     let withName<'input, 'output> (name: string) (workflow: WorkflowDef<'input, 'output>) : WorkflowDef<'input, 'output> =
         { workflow with Name = Some name }
 
@@ -531,50 +362,37 @@ module Workflow =
                 |> ResizeArray
             ExecutorFactory.CreateParallel("Parallel", branchFns)
 
-        | Resilient (settings, inner) ->
-            // TODO: Apply Polly resilience to the inner step's function
-            // For now, just create the inner executor
-            toMAFExecutor inner
-
     /// Compiles a workflow definition to MAF Workflow using WorkflowBuilder.
     /// Returns a Workflow that can be executed with InProcessExecution.RunAsync.
-    ///
-    /// IMPORTANT: The workflow must have a Name set for MAF compilation.
-    /// Use: Workflow.withName "MyWorkflow" myWorkflow
+    /// If no name is set, uses "Workflow" as the default name.
     let toMAF<'input, 'output> (workflow: WorkflowDef<'input, 'output>) : MAFWorkflow =
-        match workflow.Name with
-        | None ->
-            failwith "Workflow must have a Name set for MAF compilation. Use: Workflow.withName \"MyWorkflow\" myWorkflow"
-        | Some name ->
-            match workflow.Steps with
-            | [] -> failwith "Workflow must have at least one step"
-            | firstStep :: restSteps ->
-                // Create executors for all steps
-                let firstExecutor = toMAFExecutor firstStep
-                let restExecutors = restSteps |> List.map toMAFExecutor
+        let name = workflow.Name |> Option.defaultValue "Workflow"
+        match workflow.Steps with
+        | [] -> failwith "Workflow must have at least one step"
+        | firstStep :: restSteps ->
+            // Create executors for all steps
+            let firstExecutor = toMAFExecutor firstStep
+            let restExecutors = restSteps |> List.map toMAFExecutor
 
-                // Build workflow using MAFWorkflowBuilder
-                let mutable builder = MAFWorkflowBuilder(firstExecutor).WithName(name)
+            // Build workflow using MAFWorkflowBuilder
+            let mutable builder = MAFWorkflowBuilder(firstExecutor).WithName(name)
 
-                // Add edges between consecutive executors
-                let mutable prev = firstExecutor
-                for exec in restExecutors do
-                    builder <- builder.AddEdge(prev, exec)
-                    prev <- exec
+            // Add edges between consecutive executors
+            let mutable prev = firstExecutor
+            for exec in restExecutors do
+                builder <- builder.AddEdge(prev, exec)
+                prev <- exec
 
-                // Mark the last executor as output
-                builder <- builder.WithOutputFrom(prev)
+            // Mark the last executor as output
+            builder <- builder.WithOutputFrom(prev)
 
-                // Build and return the workflow
-                builder.Build()
+            // Build and return the workflow
+            builder.Build()
 
     // ============ MAF IN-PROCESS EXECUTION ============
 
     /// Runs a workflow via MAF InProcessExecution.
     /// The workflow is compiled to MAF format and executed in-process.
-    ///
-    /// IMPORTANT: The workflow must have a Name set.
-    /// Use: Workflow.withName "MyWorkflow" myWorkflow
     let runInProcess<'input, 'output> (input: 'input) (workflow: WorkflowDef<'input, 'output>) : Task<'output> =
         task {
             // Compile to MAF workflow
@@ -597,6 +415,10 @@ module Workflow =
             | None -> return failwith "Workflow did not produce output. No ExecutorCompletedEvent found."
         }
 
-    /// Runs a workflow synchronously via MAF InProcessExecution.
-    let runInProcessSync<'input, 'output> (input: 'input) (workflow: WorkflowDef<'input, 'output>) : 'output =
-        (workflow |> runInProcess input).GetAwaiter().GetResult()
+    /// Converts a workflow to an executor (enables workflow composition).
+    /// Uses MAF InProcessExecution to run the workflow.
+    let toExecutor<'input, 'output> (name: string) (workflow: WorkflowDef<'input, 'output>) : Executor<'input, 'output> =
+        {
+            Name = name
+            Execute = fun input _ -> runInProcess input workflow
+        }

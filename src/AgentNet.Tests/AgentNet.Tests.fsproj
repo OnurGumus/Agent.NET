@@ -14,7 +14,6 @@
     <Compile Include="SequentialWorkflowTests.fs" />
     <Compile Include="RoutingWorkflowTests.fs" />
     <Compile Include="ParallelWorkflowTests.fs" />
-    <Compile Include="ResilienceWorkflowTests.fs" />
     <Compile Include="ResultWorkflowTests.fs" />
     <Compile Include="CompositionWorkflowTests.fs" />
   </ItemGroup>

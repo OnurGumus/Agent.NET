@@ -114,8 +114,8 @@ module ResultExecutor =
     let fromWorkflow (name: string) (workflow: WorkflowDef<'input, 'output>) : ResultExecutor<'input, 'output, 'error> =
         {
             Name = name
-            Execute = fun input ctx -> task {
-                let! result = Workflow.runWithContext input ctx workflow
+            Execute = fun input _ -> task {
+                let! result = Workflow.runInProcess input workflow
                 return Ok result
             }
         }
@@ -130,7 +130,6 @@ type ResultWorkflowStep<'error> =
     | Step of name: string * execute: (obj -> WorkflowContext -> Task<Result<obj, 'error>>)
     | Route of router: (obj -> WorkflowContext -> Task<Result<obj, 'error>>)
     | Parallel of executors: (obj -> WorkflowContext -> Task<Result<obj, 'error>>) list
-    | Resilient of settings: ResilienceSettings * inner: ResultWorkflowStep<'error>
 
 
 /// A result workflow definition that can be executed
@@ -229,21 +228,6 @@ module ResultWorkflowInternal =
             return ResultHelpers.map box result
         })
 
-    /// Modifies the last step with a resilience update function
-    let modifyLastWithResilience (updateSettings: ResilienceSettings -> ResilienceSettings) (steps: ResultWorkflowStep<'e> list) : ResultWorkflowStep<'e> list =
-        match List.rev steps with
-        | [] -> failwith "No previous step to modify"
-        | last :: rest ->
-            let newLast =
-                match last with
-                | Resilient (settings, inner) ->
-                    // Already wrapped - update the settings
-                    Resilient (updateSettings settings, inner)
-                | other ->
-                    // Wrap with new resilience settings
-                    Resilient (updateSettings ResilienceSettings.defaults, other)
-            List.rev (newLast :: rest)
-
     // ========== SRTP-based helper functions for ResultStep ==========
 
     /// Converts a ResultStep<'i, 'o, 'e> to a ResultExecutor<'i, 'o, 'e>
@@ -305,18 +289,6 @@ module ResultWorkflowInternal =
             let! result = exec.Execute typedList ctx
             return ResultHelpers.map box result
         })
-
-    /// Converts a ResultStep to a fallback function for resilience settings
-    /// Note: Fallback must return Ok value (it's the last resort)
-    let resultStepToFallback<'i, 'o, 'e> (step: ResultStep<'i, 'o, 'e>) : (obj -> WorkflowContext -> Task<obj>) =
-        let exec = resultStepToExecutor "Fallback" step
-        fun (input: obj) (ctx: WorkflowContext) -> task {
-            let typedInput = input :?> 'i
-            let! result = exec.Execute typedInput ctx
-            match result with
-            | Ok value -> return box value
-            | Error _ -> return failwith "Fallback executor returned an error"
-        }
 
 
 // =============================================================================
@@ -447,34 +419,6 @@ type ResultWorkflowBuilder() =
             ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'elem list, 'output, 'e>) (ResultStepConv, x))
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepFanIn name step]; StepCount = state.StepCount + 1 }
 
-    // ============ RESILIENCE OPERATIONS ============
-
-    /// Sets retry count for the previous step
-    [<CustomOperation("retry")>]
-    member _.Retry(state: ResultWorkflowState<'input, 'output, 'e>, count: int) : ResultWorkflowState<'input, 'output, 'e> =
-        { state with Steps = state.Steps |> ResultWorkflowInternal.modifyLastWithResilience (fun s -> { s with RetryCount = count }) }
-
-    /// Sets backoff strategy for retries on the previous step
-    [<CustomOperation("backoff")>]
-    member _.Backoff(state: ResultWorkflowState<'input, 'output, 'e>, strategy: BackoffStrategy) : ResultWorkflowState<'input, 'output, 'e> =
-        { state with Steps = state.Steps |> ResultWorkflowInternal.modifyLastWithResilience (fun s -> { s with Backoff = strategy }) }
-
-    /// Sets timeout for the previous step
-    [<CustomOperation("timeout")>]
-    member _.Timeout(state: ResultWorkflowState<'input, 'output, 'e>, duration: TimeSpan) : ResultWorkflowState<'input, 'output, 'e> =
-        { state with Steps = state.Steps |> ResultWorkflowInternal.modifyLastWithResilience (fun s -> { s with Timeout = Some duration }) }
-
-    // ============ FALLBACK OPERATIONS ============
-    // Uses inline SRTP to accept Task<Result> fn, Async<Result> fn, TypedAgent, ResultExecutor, or ResultStep
-
-    /// Sets fallback for the previous step (uses SRTP)
-    [<CustomOperation("fallback")>]
-    member inline _.Fallback(state: ResultWorkflowState<'input, 'output, 'e>, x: ^T) : ResultWorkflowState<'input, 'output, 'e> =
-        let step : ResultStep<'middle, 'output, 'e> =
-            ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'middle, 'output, 'e>) (ResultStepConv, x))
-        let fallbackFn = ResultWorkflowInternal.resultStepToFallback step
-        { state with Steps = state.Steps |> ResultWorkflowInternal.modifyLastWithResilience (fun s -> { s with Fallback = Some fallbackFn }) }
-
     /// Builds the final result workflow definition
     member _.Run(state: ResultWorkflowState<'input, 'output, 'e>) : ResultWorkflowDef<'input, 'output, 'e> =
         { Steps = state.Steps }
@@ -526,31 +470,8 @@ module ResultWorkflowCE =
 [<RequireQualifiedAccess>]
 module ResultWorkflow =
 
-    /// Calculates delay for a given retry attempt based on backoff strategy
-    let private calculateDelay (strategy: BackoffStrategy) (attempt: int) : TimeSpan =
-        match strategy with
-        | Immediate -> TimeSpan.Zero
-        | Linear delay -> delay
-        | Exponential (initial, multiplier) ->
-            let factor = Math.Pow(multiplier, float (attempt - 1))
-            TimeSpan.FromMilliseconds(initial.TotalMilliseconds * factor)
-
-    /// Executes a task operation with timeout
-    let private withTimeout (timeout: TimeSpan) (operation: Task<'a>) : Task<'a> =
-        task {
-            use cts = new System.Threading.CancellationTokenSource()
-            let timeoutTask = Task.Delay(timeout, cts.Token)
-            let! completed = Task.WhenAny(operation, timeoutTask)
-
-            if Object.ReferenceEquals(completed, timeoutTask) then
-                return raise (TimeoutException("Operation timed out"))
-            else
-                cts.Cancel()
-                return! operation
-        }
-
-    /// Executes an inner step (non-resilient)
-    let rec private executeInnerStep<'e> (step: ResultWorkflowStep<'e>) (input: obj) (ctx: WorkflowContext) : Task<Result<obj, 'e>> =
+    /// Executes a single step
+    let private executeStep<'e> (step: ResultWorkflowStep<'e>) (input: obj) (ctx: WorkflowContext) : Task<Result<obj, 'e>> =
         task {
             match step with
             | Step (_, execute) ->
@@ -578,48 +499,7 @@ module ResultWorkflow =
                         |> Array.choose (function Ok v -> Some v | Error _ -> None)
                         |> Array.toList
                     return Ok (box okValues)
-
-            | Resilient (settings, inner) ->
-                return! executeWithResilience settings inner input ctx
         }
-
-    /// Executes a step with resilience (retry, timeout, fallback)
-    and private executeWithResilience<'e> (settings: ResilienceSettings) (inner: ResultWorkflowStep<'e>) (input: obj) (ctx: WorkflowContext) : Task<Result<obj, 'e>> =
-        let rec attemptWithRetry (remainingRetries: int) (attempt: int) : Task<Result<obj, 'e>> =
-            task {
-                try
-                    // Apply timeout if specified
-                    let operation = executeInnerStep inner input ctx
-                    let timedOperation =
-                        match settings.Timeout with
-                        | Some t -> withTimeout t operation
-                        | None -> operation
-
-                    let! result = timedOperation
-
-                    // For Result workflows, we don't retry on Error (that's expected domain behavior)
-                    // We only retry on exceptions (infrastructure failures)
-                    return result
-                with ex ->
-                    if remainingRetries > 0 then
-                        // Calculate and apply backoff delay
-                        let delay = calculateDelay settings.Backoff attempt
-                        if delay > TimeSpan.Zero then
-                            do! Task.Delay (int delay.TotalMilliseconds)
-
-                        // Retry
-                        return! attemptWithRetry (remainingRetries - 1) (attempt + 1)
-                    else
-                        // All retries exhausted - try fallback or rethrow
-                        match settings.Fallback with
-                        | Some fallbackFn ->
-                            let! fallbackResult = fallbackFn input ctx
-                            return Ok fallbackResult
-                        | None ->
-                            return raise ex
-            }
-
-        attemptWithRetry settings.RetryCount 1
 
     /// Runs a result workflow with the given input and context
     let runWithContext<'input, 'output, 'error> (input: 'input) (ctx: WorkflowContext) (workflow: ResultWorkflowDef<'input, 'output, 'error>) : Task<Result<'output, 'error>> =
@@ -629,7 +509,7 @@ module ResultWorkflow =
                 | [] ->
                     return Ok current
                 | step :: remaining ->
-                    let! result = executeInnerStep step current ctx
+                    let! result = executeStep step current ctx
                     match result with
                     | Ok value ->
                         return! executeSteps remaining value

@@ -46,7 +46,7 @@ let ``Nested workflow executes as single step``() =
     }
 
     // Act
-    let result = Workflow.runSync "AI agents" outerWorkflow
+    let result = (outerWorkflow |> Workflow.runInProcess "AI agents").GetAwaiter().GetResult()
 
     // Assert
     result.Research.Topic =! "AI agents"
@@ -89,7 +89,7 @@ let ``Data flows correctly through nested workflow``() =
     }
 
     // Act
-    let result = Workflow.runSync "hello" composedWorkflow
+    let result = (composedWorkflow |> Workflow.runInProcess "hello").GetAwaiter().GetResult()
 
     // Assert: Verify data flow
     step1Input =! "hello"
@@ -131,7 +131,7 @@ let ``Multiple levels of nesting work correctly``() =
     // Level3: 16 * 2 = 32
     // Level2Post: 32 + 10 = 42
     // Level1Post: 42 - 5 = 37
-    let result = Workflow.runSync 5 level1Workflow
+    let result = (level1Workflow |> Workflow.runInProcess 5).GetAwaiter().GetResult()
 
     // Assert
     result =! 37
@@ -172,7 +172,7 @@ let ``Nested workflow with custom domain types``() =
     }
 
     // Act
-    let result = Workflow.runSync "sensor-data" fullPipeline
+    let result = (fullPipeline |> Workflow.runInProcess "sensor-data").GetAwaiter().GetResult()
 
     // Assert
     result.Data.Cleaned =! [1; 2; 3; 4; 5]  // -1 and 100 removed
@@ -210,9 +210,9 @@ let ``Nested workflow can be reused in multiple outer workflows``() =
     }
 
     // Act
-    let prefixResult = Workflow.runSync 42 withPrefix
-    let suffixResult = Workflow.runSync 42 withSuffix
-    let upperResult = Workflow.runSync 42 withUpper
+    let prefixResult = (withPrefix |> Workflow.runInProcess 42).GetAwaiter().GetResult()
+    let suffixResult = (withSuffix |> Workflow.runInProcess 42).GetAwaiter().GetResult()
+    let upperResult = (withUpper |> Workflow.runInProcess 42).GetAwaiter().GetResult()
 
     // Assert
     prefixResult =! "PREFIX:[42]"
@@ -252,7 +252,7 @@ let ``Nested workflow with parallel fanOut inside``() =
     // Inner parallel: [10 + 100, 10 * 10] = [110, 100]
     // Combine: 210
     // Format: "Result: 210"
-    let result = Workflow.runSync 5 outerWorkflow
+    let result = (outerWorkflow |> Workflow.runInProcess 5).GetAwaiter().GetResult()
 
     // Assert
     result =! "Result: 210"
@@ -294,7 +294,7 @@ let ``Full report generation pipeline with composition``() =
     }
 
     // Act
-    let result = Workflow.runSync "Renewable Energy" reportWorkflow
+    let result = (reportWorkflow |> Workflow.runInProcess "Renewable Energy").GetAwaiter().GetResult()
 
     // Assert
     result.Analysis.Research.Topic =! "Renewable Energy"
@@ -317,7 +317,7 @@ let ``Workflow can be passed directly without toExecutor``() =
     }
 
     // Act: 5 -> +1 -> 6 -> *2 -> 12 -> "12"
-    let result = Workflow.runSync 5 outer
+    let result = (outer |> Workflow.runInProcess 5).GetAwaiter().GetResult()
 
     // Assert
     result =! "12"
@@ -341,7 +341,7 @@ let ``Multiple nested workflows can be chained directly``() =
     }
 
     // Act: 5 -> 5 -> +10 -> 15 -> *3 -> 45
-    let result = Workflow.runSync 5 outer
+    let result = (outer |> Workflow.runInProcess 5).GetAwaiter().GetResult()
 
     // Assert
     result =! 45
@@ -360,7 +360,7 @@ let ``Nested workflow with multiple steps works directly``() =
     }
 
     // Act
-    let result = Workflow.runSync "world" outer
+    let result = (outer |> Workflow.runInProcess "world").GetAwaiter().GetResult()
 
     // Assert: "Hello, world" -> "HELLO, WORLD" -> "HELLO, WORLD!"
     result =! "HELLO, WORLD!"
