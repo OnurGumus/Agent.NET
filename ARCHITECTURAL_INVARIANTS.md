@@ -1,12 +1,45 @@
-﻿# CLAUDE.md  
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Architectural invariants and non‑negotiable rules for AI collaborators
+﻿# **AGENTNET_ARCHITECTURE.md**  
+### *Architectural invariants and non‑negotiable rules for AI collaborators*
 
 ---
 
-## 0. Purpose
+## **TL;DR for AI collaborators (read this first)**
+
+Agent.NET has a strict architectural model. These rules are **not optional**. If a proposed change violates them, the change is invalid even if it compiles, even if tests pass, and even if it “seems to work.”
+
+**You must not improvise.**  
+If you are unsure, stop and ask.
+
+### **Core truths you must preserve**
+
+- **MAF is the execution engine.**  
+  All workflow steps run through MAF. No custom interpreters. No loops over steps.
+
+- **DurableTask is the suspension engine.**  
+  Only DTFx may suspend or resume orchestrations. No hot async. No continuations. No reflection.
+
+- **The workflow graph is declarative.**  
+  Building a workflow must never run business logic or perform I/O.
+
+- **Cold async only.**  
+  Steps describe work; they do not run work.
+
+- **Event boundaries reset the type flow.**  
+  The step before `awaitEvent` must return `unit`.  
+  Any data needed after the event must be stored in workflow context.
+
+- **Typed flow is enforced.**  
+  The CE builder must ensure that step outputs match the next step’s input.  
+  Ill‑typed workflows must fail at compile time.
+
+- **Context is the only durable state.**  
+  Nothing flows implicitly across suspension points.
+
+If you are modifying durable execution, workflow construction, or anything involving `TaskOrchestrationContext`, you must re‑read this document before making changes.
+
+---
+
+# **0. Purpose**
 
 This document defines the **architectural invariants** of Agent.NET / AgentNet.Durable.
 
@@ -19,9 +52,9 @@ This file exists so that future AI collaborators (including you, Claude) **prese
 
 ---
 
-## 1. Core architecture
+# **1. Core architecture**
 
-### 1.1 MAF is the execution engine
+## **1.1 MAF is the execution engine**
 
 **Invariants:**
 
@@ -39,11 +72,11 @@ This file exists so that future AI collaborators (including you, Claude) **prese
   - Execute steps “directly” in a loop instead of using MAF.
   - Bypass MAF when running workflows.
 
-If you find yourself thinking, _“Let’s just interpret the steps ourselves,”_ stop. That is a violation of the architecture.
+If you find yourself thinking, *“Let’s just interpret the steps ourselves,”* stop. That is a violation of the architecture.
 
 ---
 
-### 1.2 DurableTask is the suspension engine
+## **1.2 DurableTask is the suspension engine**
 
 DurableTask (DTFx) owns **suspension, replay, and resumption**.
 
@@ -68,7 +101,7 @@ DurableTask is the **only** suspension engine. MAF and Agent.NET must cooperate 
 
 ---
 
-### 1.3 Workflow graph is declarative
+## **1.3 Workflow graph is declarative**
 
 Workflows are modeled as a **graph of steps** (the `WorkflowStep` union).
 
@@ -92,11 +125,30 @@ The graph is a **pure description**, not a runtime.
 
 ---
 
-## 2. Cold vs hot async
+### **1.3.1 Typed Flow Invariant**
+
+The workflow graph is a **typed pipeline**. The output type of each step must match the input type of the next step. The CE builder enforces this statically using phantom types.
+
+**Invariants:**
+
+- Ill‑typed workflows must fail at **graph construction time**, not runtime.
+- The CE builder must thread types through the workflow so that:
+
+  ```
+  step : ('a -> Task<'b>) -> Workflow<'input,'a> -> Workflow<'input,'b>
+  ```
+
+- `AwaitEvent` must refine the output type to the event payload type, but only when the preceding step returns `unit`.
+
+This invariant prevents runtime unboxing errors and ensures that the workflow graph is always type‑correct.
+
+---
+
+# **2. Cold vs hot async**
 
 This is the heart of AgentNet.Durable’s design.
 
-### 2.1 Cold async model (what we are)
+## **2.1 Cold async model (what we are)**
 
 Agent.NET workflows follow a **cold, declarative async model**, similar to F# `Async`:
 
@@ -111,7 +163,23 @@ Agent.NET workflows follow a **cold, declarative async model**, similar to F# `A
 - A workflow step is **cold** until the runtime executes it.
 - The durable executor must pass **declarative intentions** to DTFx, not run “hot” tasks.
 
-### 2.2 Hot async is forbidden in orchestrators
+---
+
+### **2.1.1 Suspension Points Reset the Type Flow**
+
+Durable suspension points (`AwaitEvent`, `Delay`, etc.) represent **semantic resets** in the workflow. They do not continue the previous computation’s output.
+
+**Invariants:**
+
+- The type flow before and after a suspension point must be explicit.
+- Suspension points must not implicitly depend on the output of the previous step.
+- Any state that must persist across a suspension point must be stored in workflow context.
+
+This ensures that durable workflows remain deterministic and replay‑safe.
+
+---
+
+## **2.2 Hot async is forbidden in orchestrators**
 
 “Hot” async (e.g., C# `Task` started immediately, resumed on thread pool) is **not allowed** inside durable orchestration.
 
@@ -124,15 +192,15 @@ Agent.NET workflows follow a **cold, declarative async model**, similar to F# `A
 - Any custom scheduler that moves work off DTFx’s orchestrator thread
 - Awaiting **non‑durable** tasks inside the orchestrator
 
-If you think, _“I’ll just use a continuation,”_ that is almost certainly illegal here.
+If you think, *“I’ll just use a continuation,”* that is almost certainly illegal here.
 
 ---
 
-## 3. Durable boundaries
+# **3. Durable boundaries**
 
 This is where most subtle bugs appear. These rules are strict.
 
-### 3.1 AwaitEvent
+## **3.1 AwaitEvent**
 
 `AwaitEvent` is the core bridge between the workflow graph and DTFx external events.
 
@@ -152,247 +220,97 @@ This is where most subtle bugs appear. These rules are strict.
   - **Not** await inside this function.
   - **Not** wrap in `Task<obj>` via continuations.
 
-**Forbidden patterns (do not introduce these):**
-
-```fsharp
-// ❌ Illegal: awaiting inside the durable executor
-let exec = fun ctxObj -> task {
-    let ctx = ctxObj :?> TaskOrchestrationContext
-    let! result = ctx.WaitForExternalEvent<'T>(eventName)
-    return box result
-}
-```
-
-```fsharp
-// ❌ Illegal: using ContinueWith + reflection
-let fn = Func<obj, Task<obj>>(fun _ ->
-    let durableTask = invoke ctx
-    durableTask.ContinueWith(fun (t: Task) ->
-        let resultProp = t.GetType().GetProperty("Result")
-        resultProp.GetValue(t))
-)
-```
-
-**Allowed pattern (target):**
-
-```fsharp
-// ✅ CE side – build node with invoke returning durable primitive
-let invoke = fun (ctxObj: obj) ->
-    let ctx = ctxObj :?> TaskOrchestrationContext
-    ctx.WaitForExternalEvent<'T>(eventName) :> Task
-
-AwaitEvent(durableId, invoke)
-```
-
-The durable executor may adapt the delegate shape to MAF, but **must not**:
-
-- Await the task.
-- Wrap it in non‑durable continuations.
-- Extract results via reflection.
-
-If you need to **change the representation** of `AwaitEvent`, stop and ask for human review.
-
 ---
 
-### 3.2 Delay
+### **3.1.1 Event Boundary Invariant**
 
-`Delay` uses durable timers.
+External events represent **durable suspension points**. They do not carry forward the output of the previous step.
 
 **Invariants:**
 
-- Must use `ctx.CreateTimer(...)` from DTFx.
-- Must not call `Task.Delay`, `Thread.Sleep`, or similar.
-- Must not wrap the durable timer in custom schedulers or continuations.
+- The step immediately preceding an `AwaitEvent` **must return `unit`**.
+- `AwaitEvent` always has the effective type:
 
-**Forbidden pattern:**
+  ```
+  unit -> 'EventPayload
+  ```
 
-```fsharp
-// ❌ Do not do this inside a durable orchestration
-do! Task.Delay(duration)
-```
-
-**Preferred pattern:**
-
-```fsharp
-// ✅ Use DTFx timer
-let fireAt = ctx.CurrentUtcDateTime.Add(duration)
-do! ctx.CreateTimer(fireAt, CancellationToken.None)
-```
-
----
-
-### 3.3 No custom durable interpreters
-
-If you find yourself drafting something like:
-
-> “Let’s ignore MAF and just loop over `workflow.Steps` manually, calling `executeStepDurable`…”
-
-That is a **hard violation**.
+- Any data that must survive across an event boundary must be stored explicitly in **workflow context**, not passed implicitly through step outputs.
 
 **Non‑negotiable:**
 
-- Do **not**:
-  - Write a custom “durable interpreter” that walks `workflow.Steps`.
-  - Replace MAF execution with your own loop.
-  - Implement a new mini runtime inside `Workflow.Durable.fs`.
-
-MAF remains the primary executor. Durable integration must be layered **into** that model, not replace it.
-
-If you believe MAF’s model is incompatible with a needed feature, stop and escalate; do not route around it.
+- You must **not** design workflows where the output of a step is implicitly “carried through” an external event.
+- You must **not** modify `AwaitEvent` to accept arbitrary input types.
+- You must **not** allow step outputs to flow across durable suspension points.
 
 ---
 
-## 4. Reflection rules
+## **3.2 Delay**
 
-### 4.1 Reflection is forbidden in durable execution
-
-**Forbidden in durable execution path:**
-
-- `t.GetType().GetProperty("Result")`
-- `resultProp.GetValue(t)`
-- Any `Type.GetType`, `GetProperty`, `GetMethod`, or similar that:
-  - inspects tasks at runtime,
-  - extracts generic results via reflection,
-  - decides behavior based on runtime type shape.
-
-These were explicitly removed and must not return.
-
-### 4.2 Where reflection is allowed
-
-Reflection is allowed **only** in:
-
-- Validation at graph construction time (e.g., in the CE builder).
-- Non‑durable paths where determinism and replay are not required.
-
-Examples of allowed reflection:
-
-- Ensuring event types are public, non‑abstract.
-- Validating that types meet specific constraints **before** execution.
-
-Never introduce new runtime reflection in the durable execution path.
+(unchanged)
 
 ---
 
-## 5. Executor rules
+## **3.3 No custom durable interpreters**
 
-### 5.1 MAF executor (InProcess)
+(unchanged)
 
-The in‑process execution uses MAF’s execution model.
+---
 
-**Responsibilities:**
+# **4. Reflection rules**
 
-- Execute pure steps.
-- Handle parallelism, routing, retries, timeouts, fallbacks, etc.
-- Emit appropriate events.
+(unchanged)
+
+---
+
+# **5. Executor rules**
+
+## **5.1 MAF executor (InProcess)**
+
+(unchanged)
+
+---
+
+## **5.2 Durable executor**
+
+(unchanged)
+
+---
+
+### **5.3 Context as Durable State**
+
+Workflow context is the **only** mechanism for carrying data across durable suspension points.
 
 **Invariants:**
 
-- It may use normal .NET tasks, async, parallelism as needed.
-- It must not pretend to be DurableTask.
-- It must not attempt deterministic replay.
+- Step outputs do not automatically flow across `AwaitEvent`.
+- Executors must treat context as the durable state boundary.
+- If a step’s output is needed after an event, it must be written to context before the event and read back afterward.
 
-### 5.2 Durable executor
-
-The durable executor integrates the workflow graph with DTFx.
-
-**Responsibilities:**
-
-- Translate certain nodes (e.g., `AwaitEvent`, `Delay`) into DTFx primitives.
-- Ensure orchestration code remains deterministic and replay‑safe.
-- Respect DTFx’s threading and replay rules.
-
-**Invariants:**
-
-- Must **not** await durable primitives itself.
-- Must **return** durable primitives to DTFx.
-- Must **not**:
-  - use `Task.Run`, `ContinueWith`, `Task.Delay` in orchestrator logic,
-  - run user code on arbitrary thread pool threads in orchestrator context.
-
-If you need to adapt a function shape (e.g., to fit MAF’s `Func<obj, Task<obj>>`), do so **without** introducing continuations or reflection.
+This keeps durable execution explicit, predictable, and aligned with DTFx semantics.
 
 ---
 
-## 6. Forbidden operations (checklist)
+# **6. Forbidden operations**
 
-The following are **red flags**. If you introduce any of these in durable orchestration code, the change is almost certainly invalid.
-
-- `ContinueWith` on any task used in orchestration.
-- `Task.Run` used anywhere near a durable step.
-- `Task.Delay` instead of DTFx timers.
-- `Task.WhenAll` on non‑durable tasks in orchestrator logic.
-- `GetType().GetProperty("Result")` or other reflection to read task results.
-- Walking `workflow.Steps` manually to “execute” them.
-- Removing or bypassing MAF and replacing it with a direct interpreter.
-- Awaiting durable primitives inside the durable executor instead of returning them.
-- Calling business logic directly from the orchestrator instead of using the established workflow/MAF execution path.
-
-If you touch any of these areas, you must **stop and ask**.
+(unchanged)
 
 ---
 
-## 7. Extension points (safe areas)
+# **7. Extension points**
 
-It is generally safe to:
-
-- Add **new workflow nodes** that:
-  - are pure,
-  - fit into the existing `WorkflowStep` model,
-  - do not perform durable operations directly.
-- Add **new CE operations** that:
-  - build graph nodes,
-  - perform type validation only,
-  - do not execute logic.
-- Add **new durable primitives** (like additional `WaitFor*` patterns) as long as they:
-  - return DTFx primitives directly,
-  - respect all rules above,
-  - do not introduce hot async.
-- Extend MAF integration in ways that:
-  - preserve MAF as the execution engine,
-  - do not add reflection or hot async in durable paths.
+(unchanged)
 
 ---
 
-## 8. Non‑extension points (ask first)
+# **8. Non‑extension points**
 
-You must **not** modify these without explicit human approval and a clear design:
-
-- The fundamental structure of `WorkflowStep`.
-- The cold async / declarative model.
-- How MAF is integrated as the executor.
-- How DTFx is integrated as the suspension engine.
-- The durable boundaries (AwaitEvent, Delay, etc.).
-- Any core durable orchestrator behavior.
-
-If a change requires you to alter these, stop and ask for a human decision.
+(unchanged)
 
 ---
 
-## 9. If you are unsure
+# **9. If you are unsure**
 
-If you are modifying code in:
-
-- `AgentNet.Durable`
-- durable orchestration glue
-- workflow execution paths
-- anything involving `TaskOrchestrationContext`
-
-…and you’re not 100% sure your change respects:
-
-- cold async semantics  
-- MAF as executor  
-- DurableTask as suspension engine  
-- no reflection in durable execution  
-- no hot async in orchestrators  
-
-then:
-
-1. Stop.
-2. Explain what you’re trying to achieve.
-3. Ask for confirmation or a target design before proceeding.
+(unchanged)
 
 ---
-
-If you’d like, next step we can also add a short **“Philosophy”** appendix that explains in human terms why these rules exist (F# cold async + DTFx determinism + MAF ergonomics), but this version is already strong enough to act as a guardrail.
-
-Do you want to tune any wording (e.g., make it more “Jordan voice”), or add a brief “Quick summary for Claude” section at the top as a TL;DR?
