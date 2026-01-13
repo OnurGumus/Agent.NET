@@ -23,7 +23,7 @@ Content-Type: application/json; charset=utf-8
 ### Replace {instanceId} with the actual instance ID from step 1.
 ### Status will be "Running" while waiting for approval.
 
-@instanceId = c7c376a31d734968925e28589a38a593
+@instanceId = e54fdcd5b22d4110a4784d92c129fd4e
 
 GET {{baseUrl}}/trade/{{instanceId}}/status
 
