@@ -18,7 +18,7 @@ module Workflow =
         let containsDurableOperations (workflow: WorkflowDef<'input, 'output>) : bool =
             let rec hasDurableOps step =
                 match step with
-                | AwaitEvent _ -> true
+                | AwaitEvent (_, _, _) -> true
                 | Delay _ -> true
                 | WithRetry (inner, _) -> hasDurableOps inner
                 | WithTimeout (inner, _) -> hasDurableOps inner
@@ -44,7 +44,7 @@ module Workflow =
             | Parallel branches ->
                 branches |> List.map (fun (id, exec) ->
                     (id, fun input -> exec input (WorkflowContext.create())))
-            | AwaitEvent _ | Delay _ ->
+            | AwaitEvent (_, _, _) | Delay _ ->
                 []  // Not activities - handled by DTFx primitives
             | WithRetry (inner, _) | WithTimeout (inner, _) ->
                 collectActivities inner
@@ -106,8 +106,13 @@ module Workflow =
                 ExecutorFactory.CreateParallelExecutor(parallelId, stepIndex, branchFns)
 
             // Durable operations - durable primitives invoked inside ExecuteAsync
-            | AwaitEvent (durableId, eventName) ->
-                ExecutorFactory.CreateAwaitEventExecutor<'output>(durableId, eventName, stepIndex)
+            | AwaitEvent (durableId, eventName, eventType) ->
+                // Use reflection to call the generic method with the correct event type
+                let method =
+                    typeof<ExecutorFactory>
+                        .GetMethod("CreateAwaitEventExecutor")
+                        .MakeGenericMethod(eventType)
+                method.Invoke(null, [| durableId; eventName; stepIndex |]) :?> IExecutor
 
             | Delay (durableId, duration) ->
                 ExecutorFactory.CreateDelayExecutor(durableId, duration, stepIndex)

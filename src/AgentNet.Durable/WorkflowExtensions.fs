@@ -53,7 +53,7 @@ type WorkflowBuilder with
         let durableId = $"AwaitEvent_{eventName}_{eventType.Name}"
 
         // Store metadata only - durable primitive is invoked in toMAFExecutor
-        { Name = state.Name; Steps = state.Steps @ [AwaitEvent(durableId, eventName)] }
+        { Name = state.Name; Steps = state.Steps @ [AwaitEvent(durableId, eventName, eventType)] }
 
     /// Delays the workflow for the specified duration.
     /// The workflow is checkpointed and suspended during the delay.

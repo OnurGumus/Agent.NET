@@ -19,7 +19,7 @@ type WorkflowStep =
     | Parallel of branches: (string * (obj -> WorkflowContext -> Task<obj>)) list  // (durableId, executor) pairs
     // Durable-only operations (require DurableTask runtime)
     // Stores metadata only - durable primitives are invoked in the execution layer
-    | AwaitEvent of durableId: string * eventName: string
+    | AwaitEvent of durableId: string * eventName: string * eventType: Type
     | Delay of durableId: string * duration: TimeSpan
     // Resilience wrappers (wrap the preceding step)
     | WithRetry of inner: WorkflowStep * maxRetries: int
@@ -82,7 +82,7 @@ module WorkflowInternal =
                     |> Task.WhenAll
                 return (results |> Array.toList) :> obj
             // Durable-only operations - fail in in-process execution
-            | AwaitEvent (durableId, _) ->
+            | AwaitEvent (durableId, _, _) ->
                 return failwith $"AwaitEvent '{durableId}' requires durable runtime. Use Workflow.Durable.run instead of Workflow.InProcess.run."
             | Delay (_, duration) ->
                 return failwith $"Delay ({duration}) requires durable runtime. Use Workflow.Durable.run instead of Workflow.InProcess.run."
@@ -484,7 +484,7 @@ module Workflow =
                 ExecutorFactory.CreateParallel(parallelId, branchFns)
 
             // Durable-only operations - cannot be compiled for in-process MAF execution
-            | AwaitEvent (durableId, _) ->
+            | AwaitEvent (durableId, _, _) ->
                 failwith $"AwaitEvent '{durableId}' cannot be compiled for in-process execution. Use Workflow.Durable.run instead."
             | Delay (_, duration) ->
                 failwith $"Delay ({duration}) cannot be compiled for in-process execution. Use Workflow.Durable.run instead."
