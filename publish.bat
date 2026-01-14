@@ -4,15 +4,18 @@ echo  Agent.NET NuGet Package Publisher
 echo ========================================
 echo.
 
+:: Create .build directory if it doesn't exist
+if not exist .build mkdir .build
+
 :: Clean previous builds
 echo Cleaning previous builds...
-dotnet clean -c Release --verbosity quiet
-dotnet clean -c Release --verbosity quiet --project ..\AgentNet.Durable\AgentNet.Durable.fsproj
+dotnet clean -c Release --verbosity quiet src\AgentNet\AgentNet.fsproj
+dotnet clean -c Release --verbosity quiet src\AgentNet.Durable\AgentNet.Durable.fsproj
 
 :: Build and pack AgentNet
 echo.
 echo Building and packing AgentNet...
-dotnet pack -c Release
+dotnet pack -c Release src\AgentNet\AgentNet.fsproj --output .build
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -23,7 +26,7 @@ if %ERRORLEVEL% NEQ 0 (
 :: Build and pack AgentNet.Durable
 echo.
 echo Building and packing AgentNet.Durable...
-dotnet pack -c Release --project ..\AgentNet.Durable\AgentNet.Durable.fsproj
+dotnet pack -c Release src\AgentNet.Durable\AgentNet.Durable.fsproj --output .build
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
@@ -37,13 +40,12 @@ echo ========================================
 echo  Packages created successfully!
 echo ========================================
 echo.
-echo AgentNet package:
-dir /b bin\Release\*.nupkg
+echo Packages:
+dir /b .build\*.nupkg
 echo.
-echo AgentNet.Durable package:
-dir /b ..\AgentNet.Durable\bin\Release\*.nupkg
+echo Location: %CD%\.build\
 echo.
 echo To publish to NuGet.org:
-echo   dotnet nuget push bin\Release\AgentNet.*.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
-echo   dotnet nuget push ..\AgentNet.Durable\bin\Release\AgentNet.Durable.*.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
+echo   dotnet nuget push .build\AgentNet.*.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
+echo   dotnet nuget push .build\AgentNet.Durable.*.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
 echo.
