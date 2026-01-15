@@ -10,7 +10,7 @@
 
 ## The Pitch
 
-What if building AI agents looked like this?
+What if building AI agents for your existing .NET solution looked like this?
 
 ```csharp
 // Your existing .NET service for tooling
@@ -36,9 +36,10 @@ let agent =
     |> ChatAgent.build chatClient
 ```
 
-That's it. The function name becomes the tool name. The XML docs become the description. The parameter names and types are extracted automatically. No attributes. No magic strings. No sync issues.
+The function name becomes the tool name. The XML docs become the description.  
+The parameter names and types are extracted automatically. No attributes. No magic strings. No sync issues.
 
-And when you need to orchestrate multiple agents?
+And when you want more structure, you can easily compose a type-safe, declarative workflow:
 
 ```fsharp
 let analysisWorkflow = workflow {
@@ -50,17 +51,42 @@ let analysisWorkflow = workflow {
 }
 ```
 
-**Agent.NET** wraps the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) with a clean, idiomatic F# API that makes building AI agents a joy.
+**Agent.NET** wraps the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
+with a clean, idiomatic F# API that makes building agent workflows a joy.
+
+---
+
+## What can I use Agent.NET for?
+
+Agent.NET has three primary usage patterns:
+
+1. **Chat agents with tools (`ChatAgent`)**
+   - Simple interface: `string -> Task<string>`.
+   - Tools are plain F# functions; metadata comes from XML docs.
+   - Great for assistants and MCP-style tool calling.  
+   _Learn more: [ChatAgent: pipeline-style configuration ->](#chatagent-pipeline-style-configuration)_
+
+2. **Typed agents as functions (`TypedAgent<'i,'o>`)**
+   - Wrap a `ChatAgent` with format/parse functions.
+   - Use it anywhere you’d call a service: controllers, background jobs, workflows.  
+   _Learn more: [TypedAgent: structured input/output for workflows ->](#typedagent-structured-inputoutput-for-workflows)_
+
+3. **Workflows (`workflow` / `resultWorkflow`)**
+   - Strongly typed orchestration of services, tools, and agents.
+   - Mix deterministic steps (your own .NET code) with non-deterministic steps (LLM calls).
+   - Run in-process or as Azure Durable workflows, without orchestrator boilerplate or magic strings.  
+   _Learn more: [Workflows: computation expression for orchestration ->](#workflows-computation-expression-for-orchestration)_
 
 ---
 
 ## 🚀 Durable Workflows in Azure (Minimal Example)
 
-Agent.NET workflows run anywhere — in‑memory for local execution, or durably on Azure using Durable Functions.  
-This is the entire hosting surface:
+Agent.NET workflows run anywhere — in‑memory for local execution, or durably on Azure using Durable Functions.
+
+From the `Samples.DurableFunctions` project:
 
 ```fsharp
-/// A durable workflow defined with Agent.NET
+/// A durable trade approval workflow defined with Agent.NET
 let tradeApprovalWorkflow =
     workflow {
         name "TradeApprovalWorkflow"
@@ -69,22 +95,47 @@ let tradeApprovalWorkflow =
         awaitEvent "TradeApproval" eventOf<ApprovalDecision>
         step executeTrade
     }
+```
 
-/// Azure Durable Functions orchestrator hosting the workflow
+You can host this workflow inside an Azure Durable Functions orchestrator written in F# **or C#**.
+
+F# orchestrator:
+
+```fsharp
+open Microsoft.DurableTask
+open Microsoft.Azure.Functions.Worker
+open AgentNet.Durable
+
 [<Function("TradeApprovalOrchestrator")>]
-let orchestrator ([<OrchestrationTrigger>] ctx) =
+let orchestrator ([<OrchestrationTrigger>] ctx: TaskOrchestrationContext) =
     let request = ctx.GetInput<TradeRequest>()
-    tradeApprovalWorkflow
-    |> Workflow.Durable.run ctx request
+    Workflow.Durable.run ctx request tradeApprovalWorkflow
+```
+
+Conceptual C# orchestrator calling a workflow defined in your F# project:
+
+```csharp
+using Microsoft.DurableTask;
+using Microsoft.Azure.Functions.Worker;
+using AgentNet.Durable;
+
+public static class TradeApprovalOrchestrator
+{
+    [Function("TradeApprovalOrchestrator")]
+    public static Task<TradeResult> Run([OrchestrationTrigger] TaskOrchestrationContext context)
+    {
+        var request = context.GetInput<TradeRequest>();
+        return Workflow.Durable.run(context, request, tradeApprovalWorkflow);
+    }
+}
 ```
 
 This is the final shape:  
-- **Declarative workflow definition**  
-- **Typed steps** (plain .NET functions)  
-- **Explicit suspension** via `awaitEvent`  
+- **Declarative workflow definition** — one expression per workflow  
+- **Typed steps** — plain .NET functions (with or without agents)  
+- **Explicit suspension** via `awaitEvent` (human-in-the-loop, external events)  
 - **Durable execution** powered by MAF and Azure Durable Functions  
 - **Minimal host surface** — the orchestrator simply runs the workflow  
-
 
 ---
 
