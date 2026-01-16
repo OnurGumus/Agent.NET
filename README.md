@@ -530,6 +530,30 @@ let namedOuter = workflow {
 }
 ```
 
+<details>
+<summary>C# MAF equivalent</summary>
+
+```csharp
+// Build the inner workflow
+var innerBuilder = new WorkflowBuilder(stepAExecutor);
+innerBuilder.AddEdge(stepAExecutor, stepBExecutor);
+innerBuilder.WithOutputFrom(stepBExecutor);
+var innerWorkflow = innerBuilder.Build();
+
+// Convert the inner workflow into an executor
+var innerExecutor = new WorkflowExecutor("InnerStep", innerWorkflow);
+
+// Build the outer workflow
+var outerBuilder = new WorkflowBuilder(preprocessExecutor);
+outerBuilder.AddEdge(preprocessExecutor, innerExecutor);
+outerBuilder.AddEdge(innerExecutor, postprocessExecutor);
+outerBuilder.WithOutputFrom(postprocessExecutor);
+
+var outerWorkflow = outerBuilder.Build();
+```
+
+</details>
+
 #### Running Workflows
 
 ```fsharp
