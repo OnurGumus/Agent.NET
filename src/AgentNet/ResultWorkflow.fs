@@ -267,19 +267,6 @@ module ResultWorkflowInternal =
                 })
         Parallel wrappedFns
 
-    /// Wraps a list of ResultSteps as parallel execution with a name prefix
-    let wrapResultStepParallelNamed<'i, 'o, 'e> (namePrefix: string) (steps: ResultStep<'i, 'o, 'e> list) : ResultWorkflowStep<'e> =
-        let wrappedFns =
-            steps
-            |> List.mapi (fun i step ->
-                let exec = resultStepToExecutor $"{namePrefix} {i+1}" step
-                fun (input: obj) (ctx: WorkflowContext) -> task {
-                    let typedInput = input :?> 'i
-                    let! result = exec.Execute typedInput ctx
-                    return ResultHelpers.map box result
-                })
-        Parallel wrappedFns
-
     /// Wraps a ResultStep as a fan-in aggregator, handling obj list -> typed list conversion
     let wrapResultStepFanIn<'elem, 'o, 'e> (name: string) (step: ResultStep<'elem list, 'o, 'e>) : ResultWorkflowStep<'e> =
         let exec = resultStepToExecutor name step
@@ -312,26 +299,12 @@ type ResultWorkflowBuilder() =
         let name = $"Step {state.StepCount + 1}"
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStep name step]; StepCount = state.StepCount + 1 }
 
-    /// Adds first step with name - establishes workflow input/output/error types
-    [<CustomOperation("step")>]
-    member inline _.StepFirst(state: ResultWorkflowState<_, _, 'e>, name: string, x: ^T) : ResultWorkflowState<'i, 'o, 'e> =
-        let step : ResultStep<'i, 'o, 'e> =
-            ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'i, 'o, 'e>) (ResultStepConv, x))
-        { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStep name step]; StepCount = state.StepCount + 1 }
-
     /// Adds subsequent step - threads input type through (uses SRTP)
     [<CustomOperation("step")>]
     member inline _.Step(state: ResultWorkflowState<'input, 'middle, 'e>, x: ^T) : ResultWorkflowState<'input, 'output, 'e> =
         let step : ResultStep<'middle, 'output, 'e> =
             ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'middle, 'output, 'e>) (ResultStepConv, x))
         let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStep name step]; StepCount = state.StepCount + 1 }
-
-    /// Adds subsequent step with name - threads input type through
-    [<CustomOperation("step")>]
-    member inline _.Step(state: ResultWorkflowState<'input, 'middle, 'e>, name: string, x: ^T) : ResultWorkflowState<'input, 'output, 'e> =
-        let step : ResultStep<'middle, 'output, 'e> =
-            ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'middle, 'output, 'e>) (ResultStepConv, x))
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStep name step]; StepCount = state.StepCount + 1 }
 
     // ============ ROUTING ============
@@ -384,23 +357,6 @@ type ResultWorkflowBuilder() =
     member _.FanOut(state: ResultWorkflowState<'input, 'middle, 'e>, steps: ResultStep<'middle, 'o, 'e> list) : ResultWorkflowState<'input, 'o list, 'e> =
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepParallel steps]; StepCount = state.StepCount + 1 }
 
-    // Named fanOut overloads - name is used as prefix for parallel step names
-
-    /// Runs 2 named steps in parallel (fan-out)
-    [<CustomOperation("fanOut")>]
-    member inline _.FanOut(state: ResultWorkflowState<'input, 'middle, 'e>, name: string, x1: ^A, x2: ^B) : ResultWorkflowState<'input, 'o list, 'e> =
-        let s1 : ResultStep<'middle, 'o, 'e> = ((^A or ResultStepConv) : (static member ToStep: ResultStepConv * ^A -> ResultStep<'middle, 'o, 'e>) (ResultStepConv, x1))
-        let s2 : ResultStep<'middle, 'o, 'e> = ((^B or ResultStepConv) : (static member ToStep: ResultStepConv * ^B -> ResultStep<'middle, 'o, 'e>) (ResultStepConv, x2))
-        { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepParallelNamed name [s1; s2]]; StepCount = state.StepCount + 1 }
-
-    /// Runs 3 named steps in parallel (fan-out)
-    [<CustomOperation("fanOut")>]
-    member inline _.FanOut(state: ResultWorkflowState<'input, 'middle, 'e>, name: string, x1: ^A, x2: ^B, x3: ^C) : ResultWorkflowState<'input, 'o list, 'e> =
-        let s1 : ResultStep<'middle, 'o, 'e> = ((^A or ResultStepConv) : (static member ToStep: ResultStepConv * ^A -> ResultStep<'middle, 'o, 'e>) (ResultStepConv, x1))
-        let s2 : ResultStep<'middle, 'o, 'e> = ((^B or ResultStepConv) : (static member ToStep: ResultStepConv * ^B -> ResultStep<'middle, 'o, 'e>) (ResultStepConv, x2))
-        let s3 : ResultStep<'middle, 'o, 'e> = ((^C or ResultStepConv) : (static member ToStep: ResultStepConv * ^C -> ResultStep<'middle, 'o, 'e>) (ResultStepConv, x3))
-        { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepParallelNamed name [s1; s2; s3]]; StepCount = state.StepCount + 1 }
-
     // ============ FANIN OPERATIONS ============
     // Uses inline SRTP to accept Task<Result> fn, Async<Result> fn, TypedAgent, ResultExecutor, or ResultStep
 
@@ -410,13 +366,6 @@ type ResultWorkflowBuilder() =
         let step : ResultStep<'elem list, 'output, 'e> =
             ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'elem list, 'output, 'e>) (ResultStepConv, x))
         let name = $"Step {state.StepCount + 1}"
-        { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepFanIn name step]; StepCount = state.StepCount + 1 }
-
-    /// Aggregates parallel results with a named step
-    [<CustomOperation("fanIn")>]
-    member inline _.FanIn(state: ResultWorkflowState<'input, 'elem list, 'e>, name: string, x: ^T) : ResultWorkflowState<'input, 'output, 'e> =
-        let step : ResultStep<'elem list, 'output, 'e> =
-            ((^T or ResultStepConv) : (static member ToStep: ResultStepConv * ^T -> ResultStep<'elem list, 'output, 'e>) (ResultStepConv, x))
         { Steps = state.Steps @ [ResultWorkflowInternal.wrapResultStepFanIn name step]; StepCount = state.StepCount + 1 }
 
     /// Builds the final result workflow definition

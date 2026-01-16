@@ -299,8 +299,8 @@ let ``SRTP: Result workflow with direct Task<Result> functions``() = task {
     }
 
     let resultWf = resultWorkflow {
-        step "Validate" validate
-        step "ProcessDoc" processDoc
+        step validate
+        step processDoc
     }
 
     // Act
