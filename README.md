@@ -752,4 +752,25 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ---
 
+## Roadmap
+
+### ResultWorkflow Enhancements
+
+The `resultWorkflow` CE currently has a simpler implementation compared to `workflow`. Future enhancements planned:
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Auto step naming** | Planned | Extract function names via IL inspection (like `workflow` does) instead of `Step 1`, `Step 2` |
+| **Lambda warnings** | Planned | Warn when anonymous lambdas are used, encouraging named functions |
+| **Durable execution** | Planned | `ResultWorkflow.Durable.run` for Azure Durable Functions with Result propagation |
+| **Stable durable IDs** | Planned | Generate stable IDs from function metadata for durable replay |
+
+### Other Future Work
+
+- Additional resilience patterns for `resultWorkflow` (retry, timeout, fallback with Result semantics)
+- Improved error aggregation for parallel Result workflows
+- Tooling for workflow visualization and debugging
+
+---
+
 *Built with F# and a belief that AI tooling should be elegant.*
