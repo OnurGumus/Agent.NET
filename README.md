@@ -8,6 +8,41 @@
 
 ---
 
+## What can I use Agent.NET for?
+
+Agent.NET has three primary usage patterns:
+
+1. **Chat agents with tools (`ChatAgent`)**
+   Simple interface: `string -> Task<string>`. Tools are plain F# functions with metadata from XML docs.
+   ```fsharp
+   let agent =
+       ChatAgent.create "You are a helpful assistant."
+       |> ChatAgent.withTools [searchTool; calculatorTool]
+       |> ChatAgent.build chatClient
+   ```
+   _[Learn more ->](#chatagent-pipeline-style-configuration)_
+
+2. **Typed agents as functions (`TypedAgent<'input,'output>`)**
+   Wrap a `ChatAgent` with format/parse functions for use in workflows or anywhere you'd call a service.
+   ```fsharp
+   let typedAgent = TypedAgent.create formatInput parseOutput chatAgent
+   let! result = typedAgent.Invoke(myInput)  // Typed in, typed out
+   ```
+   _[Learn more ->](#typedagent-structured-inputoutput-for-workflows)_
+
+3. **Workflows (`workflow` / `resultWorkflow`)**
+   Strongly typed orchestration mixing deterministic .NET code with LLM calls. Run in-process or on Azure Durable Functions.
+   ```fsharp
+   let myWorkflow = workflow {
+       step loadData
+       fanOut analyst1 analyst2 analyst3
+       fanIn summarize
+   }
+   ```
+   _[Learn more ->](#workflows-computation-expression-for-orchestration)_
+
+---
+
 ## The Pitch
 
 What if building AI agents for your existing .NET solution looked like this?
@@ -53,29 +88,6 @@ let analysisWorkflow = workflow {
 
 **Agent.NET** wraps the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
 with a clean, idiomatic F# API that makes building agent workflows a joy.
-
----
-
-## What can I use Agent.NET for?
-
-Agent.NET has three primary usage patterns:
-
-1. **Chat agents with tools (`ChatAgent`)**
-   - Simple interface: `string -> Task<string>`.
-   - Tools are plain F# functions; metadata comes from XML docs.
-   - Great for assistants and MCP-style tool calling.  
-   _Learn more: [ChatAgent: pipeline-style configuration ->](#chatagent-pipeline-style-configuration)_
-
-2. **Typed agents as functions (`TypedAgent<'input,'output>`)**
-   - Wrap a `ChatAgent` with format/parse functions.
-   - Use it anywhere you’d call a service: controllers, background jobs, workflows.  
-   _Learn more: [TypedAgent: structured input/output for workflows ->](#typedagent-structured-inputoutput-for-workflows)_
-
-3. **Workflows (`workflow` / `resultWorkflow`)**
-   - Strongly typed orchestration of services, tools, and agents.
-   - Mix deterministic steps (your own .NET code) with non-deterministic steps (LLM calls).
-   - Run in-process or as Azure Durable workflows, without orchestrator boilerplate or magic strings.  
-   _Learn more: [Workflows: computation expression for orchestration ->](#workflows-computation-expression-for-orchestration)_
 
 ---
 
