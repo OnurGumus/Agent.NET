@@ -23,7 +23,7 @@ let agent =
     |> ChatAgent.withTools [searchTool; calculatorTool]
     |> ChatAgent.build chatClient
 ```
-_[Learn more ->](#chatagent-pipeline-style-configuration)_
+_[Learn more ->](#tools-quotation-based-metadata-extraction)_
 
 ### 2. Create typed agents as functions (`TypedAgent<'input,'output>`)
 Wrap a `ChatAgent` with format/parse functions for use in workflows or anywhere you'd call a service.
