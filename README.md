@@ -406,19 +406,56 @@ var workflow = builder.Build();
 Route to different agents based on content:
 
 ```fsharp
-type Priority =
-    | Urgent of string
-    | Normal of string
-    | LowPriority of string
+type Priority = Urgent | Normal | LowPriority
 
 let triageWorkflow = workflow {
     step classifier
     route (function
-        | Urgent msg -> urgentHandler
-        | Normal msg -> standardHandler
-        | LowPriority msg -> batchHandler)
+        | Urgent -> urgentHandler
+        | Normal -> standardHandler
+        | LowPriority -> batchHandler)
 }
 ```
+
+<details>
+<summary>C# MAF equivalent</summary>
+
+```csharp
+// Create transitions with explicit filters
+var urgentTransition = new Transition(
+    classifierExecutor,
+    urgentHandlerExecutor
+);
+urgentTransition.Filter = result => result is Urgent;
+
+var normalTransition = new Transition(
+    classifierExecutor,
+    standardHandlerExecutor
+);
+normalTransition.Filter = result => result is Normal;
+
+var lowTransition = new Transition(
+    classifierExecutor,
+    batchHandlerExecutor
+);
+lowTransition.Filter = result => result is LowPriority;
+
+// Add transitions to the workflow
+builder.AddTransition(urgentTransition);
+builder.AddTransition(normalTransition);
+builder.AddTransition(lowTransition);
+
+// Declare possible outputs
+builder.WithOutputFrom(
+    urgentHandlerExecutor,
+    standardHandlerExecutor,
+    batchHandlerExecutor
+);
+
+var workflow = builder.Build();
+```
+
+</details>
 
 #### Resilience: Retry, Timeout, Fallback
 
