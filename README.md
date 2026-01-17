@@ -10,7 +10,11 @@
 
 ## What is Agent.NET?
 
-**Agent.NET** is an F# library built on the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) that provides **agents**, **tools**, and **workflows**.
+**Agent.NET** is an F#‑native authoring layer built on top of the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework).  
+MAF provides a powerful, low‑level foundation for building agent systems — durable state, orchestration primitives, tool execution, and a flexible runtime model.  
+
+**Agent.NET builds on those capabilities with a higher‑level, ergonomic workflow DSL designed for clarity, composability, and developer experience.**  
+Where MAF offers the essential building blocks, Agent.NET provides the expressive authoring model that makes agent workflows feel natural to write and reason about.
 
 ## What can you do with Agent.NET?
 
@@ -29,8 +33,10 @@ _[Learn more ->](#tools-quotation-based-metadata-extraction)_
 Wrap a `ChatAgent` with format/parse functions for use in workflows or anywhere you'd call a service.
 
 ```fsharp
-let typedAgent = TypedAgent.create formatInput parseOutput chatAgent
-let! result = typedAgent.Invoke(myInput)  // Typed in, typed out
+let analyzeAgent: TypedAgent<CustomerMessage, SentimentResult> = 
+    TypedAgent.create formatCustomerMessage parseSentimentResult chatAgent
+
+let! sentiment = analyzeAgent.Invoke message
 ```
 _[Learn more ->](#typedagent-structured-inputoutput-for-workflows)_
 
@@ -735,8 +741,20 @@ Agent.NET supports both execution models from a single workflow definition:
 
 ## Dependencies
 
-- [Microsoft.Agents.AI](https://github.com/microsoft/agent-framework) - Microsoft Agent Framework
-- [Microsoft.Extensions.AI](https://www.nuget.org/packages/Microsoft.Extensions.AI) - AI abstractions for .NET
+Both packages depend only on **abstractions**, keeping Agent.NET lightweight, platform‑agnostic, and free of Azure‑specific hosting requirements.
+
+### **AgentNet**  
+Built on the core Microsoft Agent Framework abstractions.
+
+- **Microsoft.Agents.AI** — agent primitives  
+- **Microsoft.Agents.AI.Workflows** — workflow graph + in‑memory execution  
+- **Microsoft.Extensions.AI.Abstractions** — AI service abstractions for .NET  
+
+### **AgentNet.Durable**  
+Adds durable execution by targeting the Durable Task abstractions.
+
+- **Microsoft.DurableTask.Abstractions** — durable orchestration primitives  
+- **Microsoft.Agents.AI.Workflows** — shared workflow graph model  
 
 ---
 
@@ -756,20 +774,20 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ### ResultWorkflow Enhancements
 
-The `resultWorkflow` CE currently has a simpler implementation compared to `workflow`. Future enhancements planned:
+The `resultWorkflow` CE currently has a simpler implementation than `workflow`. These planned improvements bring it closer to full parity while preserving its Result‑centric semantics.
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| **Auto step naming** | Planned | Extract function names via IL inspection (like `workflow` does) instead of `Step 1`, `Step 2` |
-| **Lambda warnings** | Planned | Warn when anonymous lambdas are used, encouraging named functions |
-| **Durable execution** | Planned | `ResultWorkflow.Durable.run` for Azure Durable Functions with Result propagation |
-| **Stable durable IDs** | Planned | Generate stable IDs from function metadata for durable replay |
+| **Auto step naming** | Planned | Extract function names via IL inspection (matching `workflow`) instead of `Step 1`, `Step 2` |
+| **Lambda warnings** | Planned | Warn when anonymous lambdas are used, encouraging named functions for clarity and stable IDs |
+| **Durable execution** | Planned | `ResultWorkflow.Durable.run` for Azure Durable Functions with proper `Result<'ok,'err>` propagation |
+| **Stable durable IDs** | Planned | Generate durable step IDs from function metadata for deterministic replay |
 
 ### Other Future Work
 
-- Additional resilience patterns for `resultWorkflow` (retry, timeout, fallback with Result semantics)
-- Improved error aggregation for parallel Result workflows
-- Tooling for workflow visualization and debugging
+- Additional resilience patterns for `resultWorkflow` (retry, timeout, fallback with `Result` semantics)  
+- Improved error aggregation for parallel Result workflows  
+- Tooling for workflow visualization and debugging  
 
 ---
 
