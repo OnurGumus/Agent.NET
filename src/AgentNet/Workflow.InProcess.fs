@@ -12,6 +12,11 @@ type MAFWorkflowBuilder = Microsoft.Agents.AI.Workflows.WorkflowBuilder
 type MAFInProcessExecution = Microsoft.Agents.AI.Workflows.InProcessExecution
 type MAFExecutorCompletedEvent = Microsoft.Agents.AI.Workflows.ExecutorCompletedEvent
 
+/// Internal signal for early-exit from a workflow step.
+/// Carries a boxed error payload that can be surfaced as Result<'output, 'error>
+/// by result-oriented runners.
+exception EarlyExitException of error: obj
+
 /// A typed workflow step that preserves input/output type information.
 /// This is the single source of truth for both definition and execution.
 /// No erased types - all type information is preserved.
@@ -24,6 +29,9 @@ type TypedWorkflowStep<'input, 'output> =
     | WithRetry of inner: TypedWorkflowStep<'input, 'output> * maxRetries: int
     | WithTimeout of inner: TypedWorkflowStep<'input, 'output> * timeout: TimeSpan
     | WithFallback of inner: TypedWorkflowStep<'input, 'output> * fallbackId: string * fallback: TypedWorkflowStep<'input, 'output>
+    /// Step that returns Result<'output, obj> and may early-exit the workflow.
+    /// On Ok value, produces 'output. On Error, throws EarlyExitException with boxed error.
+    | TryStep of durableId: string * name: string * execute: ('input -> WorkflowContext -> Task<Result<'output, obj>>)
 
 /// Metadata about a packed step for execution purposes.
 type StepKind =
@@ -337,6 +345,49 @@ module PackedTypedStep =
                 FallbackStep = Some fallbackPacked
             }
 
+        | TypedWorkflowStep.TryStep (durableId, name, execute) ->
+            let inProcessExec = fun (input: obj) (ctx: WorkflowContext) -> task {
+                let typedInput = input :?> 'i
+                let! result = execute typedInput ctx
+                match result with
+                | Ok value ->
+                    return value :> obj
+                | Error error ->
+                    // Signal early-exit with structured error payload
+                    return raise (EarlyExitException(error))
+            }
+            let durableExecFactory = fun (stepIndex: int) ->
+                let wrappedFn = Func<obj, Task<obj>>(fun input ->
+                    let ctx = WorkflowContext.create()
+                    task {
+                        let typedInput = input :?> 'i
+                        let! result = execute typedInput ctx
+                        match result with
+                        | Ok value ->
+                            return value :> obj
+                        | Error error ->
+                            return raise (EarlyExitException(error))
+                    })
+                Interop.ExecutorFactory.CreateStepExecutor(durableId, stepIndex, wrappedFn)
+            {
+                DurableId = durableId
+                Name = name
+                Kind = Regular
+                ExecuteInProcess = inProcessExec
+                CreateDurableExecutor = durableExecFactory
+                ActivityInfo = Some (durableId, fun input ->
+                    let ctx = WorkflowContext.create()
+                    task {
+                        let typedInput = input :?> 'i
+                        let! result = execute typedInput ctx
+                        match result with
+                        | Ok value -> return value :> obj
+                        | Error error -> return raise (EarlyExitException(error))
+                    })
+                InnerStep = None
+                FallbackStep = None
+            }
+
     /// Checks if a packed step contains durable-only operations
     let rec isDurableOnly (packed: PackedTypedStep) : bool =
         match packed.Kind with
@@ -500,6 +551,48 @@ type WorkflowBuilder() =
         let displayName = WorkflowInternal.getDisplayName step
         WorkflowInternal.warnIfLambda step durableId
         let typedStep = WorkflowInternal.toTypedStep durableId displayName step
+        { Name = state.Name; PackedSteps = state.PackedSteps @ [PackedTypedStep.pack typedStep] }
+
+    /// Adds a tryStep to the workflow.
+    /// The function must return Result<'b, 'error>. On Ok, produces 'b.
+    /// On Error, throws EarlyExitException which can be caught by runResult.
+    /// INVARIANT: WorkflowState<'input,'a> + Step<'a, Result<'b,'error>> -> WorkflowState<'input,'b>
+    [<CustomOperation("tryStep")>]
+    member inline _.TryStep(state: WorkflowState<'input, 'a>, x: ^T) : WorkflowState<'input, 'b> =
+        // Convert x to a Step<'a, Result<'b, 'error>>
+        let step : Step<'a, Result<'b, 'error>> =
+            ((^T or StepConv) : (static member ToStep: StepConv * ^T -> Step<'a, Result<'b, 'error>>) (StepConv, x))
+        let durableId = WorkflowInternal.getDurableId step
+        let displayName = WorkflowInternal.getDisplayName step
+        WorkflowInternal.warnIfLambda step durableId
+
+        // Convert Step<'a, Result<'b, 'error>> to TypedWorkflowStep.TryStep<'a, 'b>
+        // by creating an execute function that boxes the error
+        let typedStep =
+            match step with
+            | NestedWorkflow wf ->
+                // Nested workflow that itself returns Result<'b, 'error>
+                TypedWorkflowStep.TryStep (durableId, displayName, fun input ctx -> task {
+                    let mutable current: obj = box input
+                    for packedStep in wf.TypedSteps do
+                        let! result = packedStep.ExecuteInProcess current ctx
+                        current <- result
+                    let typedResult = current :?> Result<'b, 'error>
+                    // Convert to Result<'b, obj> by boxing error
+                    match typedResult with
+                    | Ok v -> return Ok v
+                    | Error e -> return Error (box e)
+                })
+            | _ ->
+                let exec = WorkflowInternal.stepToExecutor displayName step
+                TypedWorkflowStep.TryStep (durableId, displayName, fun input ctx -> task {
+                    let! typedResult = exec.Execute input ctx
+                    // Convert to Result<'b, obj> by boxing error
+                    match typedResult with
+                    | Ok v -> return Ok v
+                    | Error e -> return Error (box e)
+                })
+
         { Name = state.Name; PackedSteps = state.PackedSteps @ [PackedTypedStep.pack typedStep] }
 
     // ============ ROUTING ============
@@ -832,6 +925,18 @@ module Workflow =
                 match lastResult with
                 | Some data -> return convertToOutput<'output> data
                 | None -> return failwith "Workflow did not produce output. No ExecutorCompletedEvent found."
+            }
+
+        /// Runs a workflow via MAF InProcessExecution, catching EarlyExitException.
+        /// Returns Result<'output, obj> where Error contains the boxed error from tryStep.
+        let runResult<'input, 'output> (input: 'input) (workflow: WorkflowDef<'input, 'output>) : Task<Result<'output, obj>> =
+            task {
+                try
+                    let! output = run input workflow
+                    return Ok output
+                with
+                | EarlyExitException error ->
+                    return Error error
             }
 
         /// Converts a workflow to an executor (enables workflow composition).

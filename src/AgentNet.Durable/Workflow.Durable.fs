@@ -98,6 +98,22 @@ module Workflow =
                     return convertToOutput<'output> currentInput
             }
 
+        /// Runs a workflow within a durable orchestration context, catching EarlyExitException.
+        /// Returns Result<'output, obj> where Error contains the boxed error from tryStep.
+        let runResult<'input, 'output>
+            (ctx: TaskOrchestrationContext)
+            (input: 'input)
+            (workflow: WorkflowDef<'input, 'output>)
+            : Task<Result<'output, obj>> =
+            task {
+                try
+                    let! output = run ctx input workflow
+                    return Ok output
+                with
+                | EarlyExitException error ->
+                    return Error error
+            }
+
 
 // ============ BACKWARD COMPATIBILITY ALIAS ============
 // For existing code that uses DurableWorkflow.xxx
