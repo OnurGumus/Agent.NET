@@ -16,12 +16,12 @@ module Workflow =
 
         /// Checks if a workflow contains durable-only operations.
         /// Uses packed steps directly - no compilation to erased types.
-        let containsDurableOperations (workflow: WorkflowDef<'input, 'output>) : bool =
+        let containsDurableOperations<'input, 'output, 'error> (workflow: WorkflowDef<'input, 'output, 'error>) : bool =
             workflow.TypedSteps |> List.exists PackedTypedStep.isDurableOnly
 
         /// Validates that a workflow can run in-process (no durable-only operations).
         /// Throws if durable-only operations are detected.
-        let validateForInProcess (workflow: WorkflowDef<'input, 'output>) : unit =
+        let validateForInProcess<'input, 'output, 'error> (workflow: WorkflowDef<'input, 'output, 'error>) : unit =
             if containsDurableOperations workflow then
                 failwith "Workflow contains durable-only operations (awaitEvent, delayFor). Use Workflow.Durable.run for durable hosting."
 
@@ -30,7 +30,7 @@ module Workflow =
         /// Gets all activities that need to be registered for a workflow.
         /// Returns a list of (activityName, executeFunction) pairs.
         /// Uses packed steps directly - no compilation to erased types.
-        let getActivities<'input, 'output> (workflow: WorkflowDef<'input, 'output>)
+        let getActivities<'input, 'output, 'error> (workflow: WorkflowDef<'input, 'output, 'error>)
             : (string * (obj -> Task<obj>)) list =
             workflow.TypedSteps
             |> List.collect PackedTypedStep.collectActivities
@@ -73,10 +73,10 @@ module Workflow =
         ///
         /// KEY PHASE 3 CHANGE: Uses packed steps directly with their pre-constructed
         /// durable executors. No compilation to erased types, no reflection for AwaitEvent.
-        let run<'input, 'output>
+        let run<'input, 'output, 'error>
             (ctx: TaskOrchestrationContext)
             (input: 'input)
-            (workflow: WorkflowDef<'input, 'output>)
+            (workflow: WorkflowDef<'input, 'output, 'error>)
             : Task<'output> =
             task {
                 let packedSteps = workflow.TypedSteps
@@ -99,19 +99,19 @@ module Workflow =
             }
 
         /// Runs a workflow within a durable orchestration context, catching EarlyExitException.
-        /// Returns Result<'output, obj> where Error contains the boxed error from tryStep.
-        let runResult<'input, 'output>
+        /// Returns Result<'output, 'error> where Error contains the typed error from tryStep.
+        let runResult<'input, 'output, 'error>
             (ctx: TaskOrchestrationContext)
             (input: 'input)
-            (workflow: WorkflowDef<'input, 'output>)
-            : Task<Result<'output, obj>> =
+            (workflow: WorkflowDef<'input, 'output, 'error>)
+            : Task<Result<'output, 'error>> =
             task {
                 try
                     let! output = run ctx input workflow
                     return Ok output
                 with
                 | EarlyExitException error ->
-                    return Error error
+                    return Error (unbox<'error> error)
             }
 
 

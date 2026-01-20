@@ -32,13 +32,14 @@ type WorkflowBuilder with
     /// The received event becomes the input for the next step.
     /// Usage: awaitEvent "ApprovalEvent" eventOf<ApprovalDecision>
     /// This operation requires DurableTask runtime - will fail with runInProcess.
+    /// Does NOT change the error type.
     ///
     /// EVENT BOUNDARY INVARIANT (per DESIGN_CE_TYPE_THREADING.md):
-    /// Input state MUST be WorkflowState<'input, unit>.
+    /// Input state MUST be WorkflowState<'input, unit, 'error>.
     /// This enforces that all data needed after the event must be stored in context
     /// before the event boundary. The step before awaitEvent must return unit.
     [<CustomOperation("awaitEvent")>]
-    member _.AwaitEvent(state: WorkflowState<'input, unit>, eventName: string, _witness: 'event) : WorkflowState<'input, 'event> =
+    member _.AwaitEvent(state: WorkflowState<'input, unit, 'error>, eventName: string, _witness: 'event) : WorkflowState<'input, 'event, 'error> =
         // Early validation - fail fast at workflow construction time
         if String.IsNullOrWhiteSpace(eventName) then
             failwith "awaitEvent: event name cannot be null or empty"
@@ -59,8 +60,9 @@ type WorkflowBuilder with
     /// Delays the workflow for the specified duration.
     /// The workflow is checkpointed and suspended during the delay.
     /// This operation requires DurableTask runtime - will fail with runInProcess.
+    /// Does NOT change the error type.
     [<CustomOperation("delayFor")>]
-    member _.DelayFor(state: WorkflowState<'input, 'output>, duration: TimeSpan) : WorkflowState<'input, 'output> =
+    member _.DelayFor(state: WorkflowState<'input, 'output, 'error>, duration: TimeSpan) : WorkflowState<'input, 'output, 'error> =
         let durableId = $"Delay_{int duration.TotalMilliseconds}ms"
         // Create a typed step and pack it
         let typedStep : TypedWorkflowStep<'output, 'output> = TypedWorkflowStep.Delay(durableId, duration)
