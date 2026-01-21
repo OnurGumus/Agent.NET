@@ -625,13 +625,6 @@ TypedAgent.invoke: 'i -> TypedAgent<'i,'o> -> Task<'o>
 | `fallback` | Use alternative executor on failure |
 | `backoff` | Set retry delay strategy |
 
-### Workflow Functions
-
-```fsharp
-Workflow.runInProcess: 'i -> WorkflowDef<'i,'o> -> Task<'o>
-Workflow.toExecutor: WorkflowDef<'i,'o> -> Executor<'i,'o>
-```
-
 ---
 
 ## XML Documentation Format
