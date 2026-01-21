@@ -525,20 +525,20 @@ type ProcessingError =
     | SaveError of int
 
 let parse (raw: string) =
-    if raw.Length > 0 then Ok { Id = "doc"; Content = raw }
+    if raw.Length > 0
+    then Ok { Id = "doc"; Content = raw }
     else Error (ParseError "Empty input")
     |> Task.fromResult
 
 let validate (doc: Document) =
-    if doc.Content.Contains("valid") then
-        Ok { Doc = doc; IsValid = true; Errors = [] }
-    else
-        Error (ValidationError "Missing 'valid' keyword")
+    if doc.Content.Contains("valid")
+    then Ok { Doc = doc; IsValid = true; Errors = [] }
+    else Error (ValidationError "Missing 'valid' keyword")
     |> Task.fromResult
 
 let save (validated: ValidatedDoc) =
+    printfn "Saving Document"
     { Doc = validated; WordCount = 1; Summary = "Saved" }
-    |> Ok
     |> Task.fromResult
 
 let documentWorkflow = workflow {
