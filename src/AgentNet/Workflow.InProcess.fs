@@ -1002,11 +1002,11 @@ module Workflow =
                     | _ -> ()
 
                 match completed, earlyExit with
+                | _, Some error ->
+                    return Error (unbox<'error> error)
+
                 | Some data, _ ->
                     return Ok (convertToOutput<'output> data)
-
-                | None, Some error ->
-                    return Error (unbox<'error> error)
 
                 | None, None ->
                     return failwith "Workflow terminated without success or early exit."

@@ -67,7 +67,18 @@ public class ExecutorEarlyExitEvent(string executorId, object error)
     /// </summary>
     public object Error { get; } = error;
 }
- 
+
+/// <summary>
+/// Thrown from StepExecutor to prevent further execution.
+/// </summary>
+/// <param name="error"></param>
+public class EarlyExitException(object error) : Exception("Executor signaled early exit")
+{
+    /// <summary>
+    /// The error object associated with the early exit.
+    /// </summary>
+    public object Error { get; } = error;
+}
 
 /// <summary>
 /// Durable step executor using primary constructor pattern.
@@ -132,7 +143,8 @@ public class StepExecutor(string name, Func<object, Task<object>> execute) : Exe
             // Emit early-exit event
             await context.AddEventAsync(new ExecutorEarlyExitEvent(this.Id, signal.Error), ct);
 
-            return null; // prevents ExecutorCompletedEvent
+            // Throw to prevent workflow from continuing
+            throw new EarlyExitException(signal.Error);
         }
 
         return result;
