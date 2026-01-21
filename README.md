@@ -509,7 +509,7 @@ Workflows often need to perform validation or business‑rule checks that may fa
 ### When a `tryStep` returns:
 
 - `Ok value` → the workflow continues with `value`  
-- `Error err` → the workflow **exits immediately**, returning `Error err` from `runResult`  
+- `Error err` → the workflow **exits immediately**, returning `Error err` from `tryRun`  
 
 This gives you the classic “railway switch” behavior with minimal ceremony.
 
@@ -549,11 +549,11 @@ let documentWorkflow = workflow {
 ### Running the workflow
 
 ```fsharp
-let! result = Workflow.InProcess.runResult "" documentWorkflow
+let! result = Workflow.InProcess.tryRun documentWorkflow
 ```
 
 - If any `tryStep` returns `Error`, the workflow stops immediately  
-- `runResult` returns `Result<'ok, 'err>`  
+- `tryRun` returns `Result<'ok, 'err>`  
 - `run` (without `Result`) throws an internal early‑exit signal instead — useful for Durable orchestrators  
 
 ### Why `tryStep` feels so natural
