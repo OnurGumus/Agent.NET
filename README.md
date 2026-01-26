@@ -522,7 +522,6 @@ This gives you the classic “railway switch” behavior with minimal ceremony.
 type ProcessingError =
     | ParseError of string
     | ValidationError of string
-    | SaveError of int
 
 let parse (raw: string) =
     if raw.Length > 0
