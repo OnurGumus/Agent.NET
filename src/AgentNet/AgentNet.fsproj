@@ -8,14 +8,14 @@
 
   <!-- NuGet Package Metadata -->
   <PropertyGroup>
-    <PackageId>AgentNet</PackageId>
-    <Version>1.0.0-alpha.3</Version>
-    <Authors>Jordan Marr</Authors>
-    <Description>A beautiful F# library for building AI agents on .NET. Wraps Microsoft Agent Framework with idiomatic F# APIs using quotation-based tools, pipeline-style agents, and computation expression workflows.</Description>
+    <PackageId>AgentNet.Unofficial</PackageId>
+    <Version>1.0.0-alpha.4</Version>
+    <Authors>Jordan Marr;Onur Gumus</Authors>
+    <Description>Unofficial fork of AgentNet updated for Microsoft.Agents.AI 260212.1. An F# library for building AI agents on .NET, wrapping Microsoft Agent Framework with idiomatic F# APIs.</Description>
     <PackageTags>fsharp;ai;agents;llm;microsoft-agent-framework;workflows</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/JordanMarr/Agent.NET</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/JordanMarr/Agent.NET</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/OnurGumus/Agent.NET</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/OnurGumus/Agent.NET</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
