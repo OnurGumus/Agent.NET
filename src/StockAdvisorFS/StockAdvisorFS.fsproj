@@ -25,4 +25,8 @@
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="8.0.100" />
+  </ItemGroup>
+
 </Project>

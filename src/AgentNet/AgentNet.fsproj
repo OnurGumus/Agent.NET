@@ -49,6 +49,10 @@
     <ProjectReference Include="..\AgentNet.Interop\AgentNet.Interop.csproj" PrivateAssets="All" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="8.0.100" />
+  </ItemGroup>
+
   <!-- Include AgentNet.Interop in NuGet package -->
   <Target Name="IncludeInteropInPackage" BeforeTargets="BuildOnlySettings">
     <ItemGroup>
