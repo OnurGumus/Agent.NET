@@ -31,8 +31,8 @@ type ChatResponse = {
 /// Represents an AI agent that can chat and use tools
 type ChatAgent = {
     Config: ChatAgentConfig
-    Chat: string -> Task<string>
-    ChatFull: string -> Task<ChatResponse>
+    Chat: string -> System.Threading.CancellationToken -> Task<string>
+    ChatFull: string -> System.Threading.CancellationToken -> Task<ChatResponse>
 }
 
 /// Pipeline functions for creating chat agents

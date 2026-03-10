@@ -59,7 +59,7 @@ let private chatLoop (agent: ChatAgent) = task {
             return ()
         else
             printf "\nStockAdvisor: "
-            let! response = agent.Chat(input)
+            let! response = agent.Chat input System.Threading.CancellationToken.None
             printfn "%s\n" response
             return! loop ()
     }
