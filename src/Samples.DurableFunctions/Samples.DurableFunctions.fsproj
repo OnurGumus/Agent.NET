@@ -17,11 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="$(AzFuncWorkerVersion)" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" Version="$(AzFuncDurableTaskExtVersion)" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="$(AzFuncHttpExtVersion)" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="$(AzFuncHttpAspNetCoreExtVersion)" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="$(AzFuncWorkerSdkVersion)" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
     <PackageReference Include="Microsoft.DurableTask.Generators" Version="1.0.0" />
   </ItemGroup>
 

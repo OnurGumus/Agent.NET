@@ -1,0 +1,46 @@
+<Project>
+
+  <!-- ========================================================= -->
+  <!--  Microsoft Agents Framework (MAF)                         -->
+  <!--  These packages must always be version-aligned.           -->
+  <!-- ========================================================= -->
+  <ItemGroup>
+    <PackageReference Update="Microsoft.Agents.AI" Version="1.0.0-rc4" />
+    <PackageReference Update="Microsoft.Agents.AI.OpenAI" Version="1.0.0-rc4" />
+    <PackageReference Update="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc4" />
+  </ItemGroup>
+
+  <!-- ========================================================= -->
+  <!--  Microsoft.Extensions.AI (the foundation MAF sits on)     -->
+  <!--  These MUST match the version MAF was compiled against.   -->
+  <!-- ========================================================= -->
+  <ItemGroup>
+    <PackageReference Update="Microsoft.Extensions.AI" Version="10.4.0" />
+    <PackageReference Update="Microsoft.Extensions.AI.Core" Version="10.4.0" />
+    <PackageReference Update="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
+    <PackageReference Update="Microsoft.Extensions.AI.Abstractions" Version="10.4.0" />
+  </ItemGroup>
+
+  <!-- ========================================================= -->
+  <!--  Durable Task Framework                                   -->
+  <!--  Used by AgentNet.Durable and Azure Functions workflows.  -->
+  <!--  These must be aligned to avoid runtime type mismatches.  -->
+  <!-- ========================================================= -->
+  <ItemGroup>
+    <PackageReference Update="Microsoft.DurableTask.Abstractions" Version="1.22.0" />
+  </ItemGroup>
+
+  <!-- ========================================================= -->
+  <!--  Azure Functions Worker                                   -->
+  <!--  If you have more than one Functions project, these MUST  -->
+  <!--  be centralized to avoid binding conflicts.               -->
+  <!-- ========================================================= -->
+  <ItemGroup>
+    <PackageReference Update="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
+    <PackageReference Update="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" />
+    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" Version="1.16.0" />
+    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
+    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
+  </ItemGroup>
+
+</Project>

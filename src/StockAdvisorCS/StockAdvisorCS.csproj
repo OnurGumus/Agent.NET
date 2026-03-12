@@ -10,10 +10,10 @@
   <ItemGroup>
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
     <PackageReference Include="Anthropic" Version="12.8.0" />
-    <PackageReference Include="Microsoft.Agents.AI" Version="$(MAFVersion)" />
-    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="$(MAFVersion)" />
-    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="$(MAFVersion)" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="$(MsExtAIVersion)" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
   </ItemGroup>
 
 </Project>

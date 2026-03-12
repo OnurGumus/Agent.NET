@@ -37,8 +37,8 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.DurableTask.Abstractions" Version="$(DurableTaskVersion)" />
-    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="$(MAFVersion)" />
+    <PackageReference Include="Microsoft.DurableTask.Abstractions" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" />
   </ItemGroup>
 
   <ItemGroup>
