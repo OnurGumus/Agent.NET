@@ -1,0 +1,32 @@
+<Project>
+
+  <!-- ========================================================= -->
+  <!--  Centralized version properties                           -->
+  <!--  Change the version here and all projects pick it up.     -->
+  <!-- ========================================================= -->
+
+  <!-- Microsoft Agents Framework (MAF) — must be version-aligned -->
+  <PropertyGroup>
+    <MAFVersion>1.0.0-rc4</MAFVersion>
+  </PropertyGroup>
+
+  <!-- Microsoft.Extensions.AI — must match the version MAF was compiled against -->
+  <PropertyGroup>
+    <MsExtAIVersion>10.4.0</MsExtAIVersion>
+  </PropertyGroup>
+
+  <!-- Durable Task Framework — must be aligned to avoid runtime type mismatches -->
+  <PropertyGroup>
+    <DurableTaskVersion>1.22.0</DurableTaskVersion>
+  </PropertyGroup>
+
+  <!-- Azure Functions Worker — must be centralized to avoid binding conflicts -->
+  <PropertyGroup>
+    <AzFuncWorkerVersion>2.51.0</AzFuncWorkerVersion>
+    <AzFuncWorkerSdkVersion>2.0.7</AzFuncWorkerSdkVersion>
+    <AzFuncDurableTaskExtVersion>1.16.0</AzFuncDurableTaskExtVersion>
+    <AzFuncHttpExtVersion>3.3.0</AzFuncHttpExtVersion>
+    <AzFuncHttpAspNetCoreExtVersion>2.1.0</AzFuncHttpAspNetCoreExtVersion>
+  </PropertyGroup>
+
+</Project>

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
@@ -9,9 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-rc2" />
-    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc2" />
-    <PackageReference Include="Microsoft.DurableTask.Abstractions" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="$(MAFVersion)" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="$(MAFVersion)" />
+    <PackageReference Include="Microsoft.DurableTask.Abstractions" Version="$(DurableTaskVersion)" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="$(MsExtAIVersion)" />
   </ItemGroup>
 
 </Project>
