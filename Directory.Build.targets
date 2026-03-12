@@ -30,17 +30,4 @@
     <PackageReference Update="Microsoft.DurableTask.Abstractions" Version="1.22.0" />
   </ItemGroup>
 
-  <!-- ========================================================= -->
-  <!--  Azure Functions Worker                                   -->
-  <!--  If you have more than one Functions project, these MUST  -->
-  <!--  be centralized to avoid binding conflicts.               -->
-  <!-- ========================================================= -->
-  <ItemGroup>
-    <PackageReference Update="Microsoft.Azure.Functions.Worker" Version="2.51.0" />
-    <PackageReference Update="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.7" />
-    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.DurableTask" Version="1.16.0" />
-    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.3.0" />
-    <PackageReference Update="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
-  </ItemGroup>
-
 </Project>
