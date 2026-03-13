@@ -307,6 +307,7 @@ let ``Policy forwards CancellationToken through TypedAgent to ChatAgent``() =
         ChatFull = fun _message _ct -> task {
             return { Text = "response"; Messages = [] }
         }
+        ChatStream = fun _message -> Unchecked.defaultof<_>
     }
 
     let typedAgent = TypedAgent.create
