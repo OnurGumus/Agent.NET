@@ -33,17 +33,20 @@ pipeline "publish" {
             if not (System.IO.Directory.Exists(outputDir)) then
                 System.IO.Directory.CreateDirectory(outputDir) |> ignore
         )
-        run $"dotnet pack src/AgentNet/AgentNet.fsproj -c Release --no-build --output {outputDir}"
-        run $"dotnet pack src/AgentNet.Durable/AgentNet.Durable.fsproj -c Release --no-build --output {outputDir}"
-        run $"dotnet pack src/AgentNet.InProcess/AgentNet.InProcess.fsproj -c Release --no-build --output {outputDir}"
-        run $"dotnet pack src/AgentNet.InProcess.Polly/AgentNet.InProcess.Polly.fsproj -c Release --no-build --output {outputDir}"
+        run $"dotnet pack src/AgentNet/AgentNet.fsproj -c Release --output {outputDir}"
+        run $"dotnet pack src/AgentNet.Durable/AgentNet.Durable.fsproj -c Release --output {outputDir}"
+        run $"dotnet pack src/AgentNet.InProcess/AgentNet.InProcess.fsproj -c Release --output {outputDir}"
+        run $"dotnet pack src/AgentNet.InProcess.Polly/AgentNet.InProcess.Polly.fsproj -c Release --output {outputDir}"
     }
 
     stage "push" {
-        whenEnvVar "SQLHYDRA_NUGET_KEY"
+        whenEnvVar "AGENT_NET_NUGET_KEY"
         run (fun ctx ->
-            let key = ctx.GetEnvVar "SQLHYDRA_NUGET_KEY"
-            ctx.RunSensitiveCommand $"""dotnet nuget push {outputDir}/*.nupkg -s https://api.nuget.org/v3/index.json -k {key}"""
+            let key = ctx.GetEnvVar "AGENT_NET_NUGET_KEY"
+            for pkg in System.IO.Directory.GetFiles(outputDir, "*.nupkg") do
+                ctx.RunSensitiveCommand $"""dotnet nuget push {pkg} -s https://api.nuget.org/v3/index.json -k {key}"""
+                |> Async.RunSynchronously
+                |> ignore
         )
     }
 
