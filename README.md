@@ -444,54 +444,72 @@ var combinedPolicy = Policy.WrapAsync(fallbackPolicy, timeoutPolicy, retryPolicy
 ```
 </details>
 
-#### Polly Integration: `policy`
+### Polly Integration (InProcess Runtime Only)
 
-For advanced resilience scenarios — rate limiting, circuit breakers, hedging, or composing multiple strategies — use the `policy` decorator with a Polly `ResiliencePipeline`:
+AgentNet includes **built‑in, cross‑runtime resilience features** such as retries, timeouts, and backoff strategies that work consistently across both the Durable and InProcess runtimes. These features are deterministic, replay‑safe, and integrated directly into the workflow execution model.
+
+For **advanced, runtime‑only resilience scenarios** — such as circuit breakers, hedging, rate limiting, or composite resilience strategies — you can optionally integrate **Polly** through the `AgentNet.InProcess.Polly` extension package.
+
+Polly policies run **only in the InProcess runtime**, and are applied using the standard decorator mechanism:
 
 ```fsharp
 open Polly
+open AgentNet.InProcess.Polly
+open PollyDecorators
 
-let retryPipeline =
+let retryPolicy =
     ResiliencePipelineBuilder()
-        .AddRetry(Retry.RetryStrategyOptions(MaxRetryAttempts = 3))
+        .AddRetry(fun r ->
+            r.MaxRetryAttempts <- 3
+        )
         .Build()
 
 let resilientWorkflow = workflow {
     step unreliableStep
-    policy retryPipeline
+    decorate (policy retryPolicy)
 }
 ```
 
-Compose multiple Polly strategies into a single pipeline:
+### Composing Multiple Polly Strategies
 
 ```fsharp
-let combinedPipeline =
+let combinedPolicy =
     ResiliencePipelineBuilder()
-        .AddRetry(Retry.RetryStrategyOptions(MaxRetryAttempts = 3, Delay = TimeSpan.FromSeconds 1.))
-        .AddTimeout(Timeout.TimeoutStrategyOptions(Timeout = TimeSpan.FromSeconds 30.))
+        .AddRetry(fun r ->
+            r.MaxRetryAttempts <- 3
+            r.Delay <- TimeSpan.FromSeconds 1.
+        )
+        .AddTimeout(fun t ->
+            t.Timeout <- TimeSpan.FromSeconds 30.
+        )
         .Build()
 
-let robustWorkflow = workflow {
+workflow {
     step callExternalApi
-    policy combinedPipeline
+    decorate (policy combinedPolicy)
     step processResult
 }
 ```
 
-Polly's `CancellationToken` is automatically threaded into each step's `WorkflowContext`, so cooperative cancellation works out of the box — Polly timeout cancels the token, and steps that observe `ctx.CancellationToken` abort promptly.
+### Cancellation
 
-#### Cancellation: `runWithCancellation`
+AgentNet automatically threads the workflow’s `CancellationToken` into all Polly policies. This ensures:
 
-Pass an external `CancellationToken` into the entire workflow. The token flows through every step's `WorkflowContext` and into any Polly policies:
+- Polly timeouts cancel the workflow token  
+- Steps observing `ctx.CancellationToken` abort promptly  
+- External cancellation via `runWithCancellation` flows into Polly  
+- Retry loops stop immediately when cancellation is signaled  
 
 ```fsharp
 use cts = new CancellationTokenSource()
 cts.CancelAfter(TimeSpan.FromSeconds 10.)
 
-let! result = myWorkflow |> Workflow.InProcess.runWithCancellation cts.Token input
+let! result =
+    myWorkflow
+    |> Workflow.InProcess.runWithCancellation cts.Token input
 ```
 
-When the token is cancelled, the currently executing step receives the cancellation through `ctx.CancellationToken`, and any Polly pipeline wrapping the step also honours it. Subsequent steps do not execute.
+---
 
 #### Composition: Nest Workflows
 
