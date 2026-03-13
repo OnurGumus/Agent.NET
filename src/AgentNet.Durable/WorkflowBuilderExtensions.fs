@@ -1,8 +1,9 @@
 // ============================================================================
 // WARNING: Declarative Layer Only
 // ----------------------------------------------------------------------------
-// This file defines WorkflowBuilder custom operations. These operations must be
-// 100% declarative. They may NOT:
+// This file defines WorkflowBuilder custom operations. 
+// These operations must be 100% declarative. 
+// They may NOT:
 //   - call DurableTask APIs
 //   - capture TaskOrchestrationContext
 //   - construct lambdas that will run at execution time
@@ -17,7 +18,7 @@
 /// These operations require DurableTask runtime - will fail with runInProcess.
 /// Users must `open AgentNet.Durable` to access these extensions.
 [<AutoOpen>]
-module AgentNet.Durable.WorkflowExtensions
+module AgentNet.Durable.WorkflowBuilderExtensions
 
 open System
 open AgentNet
