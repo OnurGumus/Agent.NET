@@ -9,12 +9,12 @@ module WorkflowBuilderExtensions =
     type Exec = obj -> WorkflowContext -> Task<obj>
     type Decorator = Exec -> Exec
 
-    /// Compose decorators left‑to‑right: (d1 >-> d2) applies d1 first, then d2.
-    let (>->) (d1: Decorator) (d2: Decorator) : Decorator =
-        fun exec -> exec |> d1 |> d2
-
     type WorkflowBuilder with
 
+        /// Applies a runtime-only decorator to the previously defined step.
+        /// Decorators wrap the step’s ExecuteInProcess function (outermost decorator runs first)
+        /// and are intended for behaviors like logging, retries, metrics, or tracing.
+        /// This does not modify the workflow AST or Durable execution semantics.
         [<CustomOperation("decorate")>]
         member _.Decorate
             (
