@@ -1,6 +1,7 @@
 namespace AgentNet
 
 open System.Collections.Generic
+open System.Threading
 open System.Threading.Tasks
 
 /// Configuration for a chat agent
@@ -53,19 +54,20 @@ type ChatAgent(config, chat, chatFull, chatStream) =
         config
 
     /// Sends a message to the agent and returns only the assistant's final text.
-    member this.Chat(msg: string, ?ct: System.Threading.CancellationToken) : Task<string> = 
-        let ct = defaultArg ct System.Threading.CancellationToken.None
+    member this.Chat(msg: string, ?ct: CancellationToken) : Task<string> = 
+        let ct = defaultArg ct CancellationToken.None
         chat msg ct
 
     /// Sends a message to the agent and returns the full structured response.
-    member this.ChatFull(msg: string, ?ct: System.Threading.CancellationToken) : Task<ChatResponse> = 
-        let ct = defaultArg ct System.Threading.CancellationToken.None
+    member this.ChatFull(msg: string, ?ct: CancellationToken) : Task<ChatResponse> = 
+        let ct = defaultArg ct CancellationToken.None
         chatFull msg ct
 
     /// Streams incremental updates from the agent, including text deltas, 
     /// reasoning deltas, tool-call updates, and a final completion event.
-    member this.ChatStream(msg: string) : IAsyncEnumerable<ChatStreamEvent> = 
-        chatStream msg
+    member this.ChatStream(msg: string, ?ct: CancellationToken) : IAsyncEnumerable<ChatStreamEvent> = 
+        let ct = defaultArg ct CancellationToken.None
+        chatStream msg ct
 
 
 /// Pipeline functions for creating chat agents

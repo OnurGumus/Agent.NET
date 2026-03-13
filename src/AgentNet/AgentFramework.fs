@@ -90,9 +90,9 @@ module MAF =
             return { Text = response.Text; Messages = messages }
         }
 
-        let chatStream (message: string) =
+        let chatStream (msg: string) ct =
             { new IAsyncEnumerable<ChatStreamEvent> with
-                member _.GetAsyncEnumerator(ct) =
+                member _.GetAsyncEnumerator(_) =
                     let textAccumulator = StringBuilder()
                     let seenToolCalls = HashSet<string>()
                     let mutable session = Unchecked.defaultof<_>
@@ -109,7 +109,7 @@ module MAF =
                                 if innerEnumerator = null then
                                     let! s = mafAgent.CreateSessionAsync(ct)
                                     session <- s
-                                    let stream = mafAgent.RunStreamingAsync(message, session, null, ct)
+                                    let stream = mafAgent.RunStreamingAsync(msg, session, null, ct)
                                     innerEnumerator <- stream.GetAsyncEnumerator(ct)
 
                                 // Drain buffered events first
@@ -142,7 +142,7 @@ module MAF =
                                             // Stream ended — emit Completed
                                             let fullText = textAccumulator.ToString()
                                             let messages : AgentNet.ChatMessage list = [
-                                                { Role = AgentNet.ChatRole.User; Content = message }
+                                                { Role = AgentNet.ChatRole.User; Content = msg }
                                                 { Role = AgentNet.ChatRole.Assistant; Content = fullText }
                                             ]
                                             current <- Completed { Text = fullText; Messages = messages }
