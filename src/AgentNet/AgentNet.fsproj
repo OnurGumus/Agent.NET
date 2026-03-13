@@ -44,7 +44,6 @@
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
-    <PackageReference Include="Polly.Core" Version="8.5.2" />
   </ItemGroup>
 
   <ItemGroup>
